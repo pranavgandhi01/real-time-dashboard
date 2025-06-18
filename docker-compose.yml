@@ -1,0 +1,25 @@
+# docker-compose.yml
+services:
+  # Go Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: realtime-backend
+    ports:
+      # Expose backend port 8080 to the host machine
+      - "8080:8080"
+    restart: unless-stopped
+
+  # Next.js Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: realtime-frontend
+    ports:
+      # Expose frontend port 3000 to the host machine
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
