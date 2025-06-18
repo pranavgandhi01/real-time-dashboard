@@ -18,4 +18,4 @@ vendor/ # Go modules vendor directory
 .idea/ # IntelliJ IDEA
 .vscode/ # VS Code
 .DS_Store # macOS
-Thumbs.db # Windows
+Thumbs.db # Windowsnode_modules/
