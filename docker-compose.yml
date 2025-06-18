@@ -1,25 +1,38 @@
 # docker-compose.yml
+
 services:
-  # Go Backend Service
   backend:
     build:
-      context: ./backend
+      context: ./backend # Path to your backend Dockerfile
       dockerfile: Dockerfile
-    container_name: realtime-backend
     ports:
-      # Expose backend port 8080 to the host machine
-      - "8080:8080"
-    restart: unless-stopped
+      - "8080:8080" # Map host port 8080 to container port 8080
+    environment:
+      # Backend environment variables
+      - PORT=8080 # The port the Go application will listen on
+      - OPEN_SKY_API_URL=https://opensky-network.org/api/states/all # OpenSky API URL
+      - ALLOWED_ORIGINS=http://localhost:3000 # Comma-separated list of allowed origins for WebSocket. Add your frontend's URL here.
+    networks:
+      - real-time-dashboard_default # Ensure both services are on the same network
 
-  # Next.js Frontend Service
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend # Path to your frontend Dockerfile
       dockerfile: Dockerfile
-    container_name: realtime-frontend
     ports:
-      # Expose frontend port 3000 to the host machine
-      - "3000:3000"
+      - "3000:3000" # Map host port 3000 to container port 3000 (Next.js default)
+    environment:
+      # Frontend environment variables
+      # NEXT_PUBLIC_ prefix is required for client-side variables in Next.js
+      # 'backend' refers to the service name in docker-compose for inter-container communication
+      - NEXT_PUBLIC_WEBSOCKET_URL=ws://backend:8080/ws
     depends_on:
-      - backend
-    restart: unless-stopped
+      - backend # Ensures backend starts before frontend
+    networks:
+      - real-time-dashboard_default # Ensure both services are on the same network
+
+# Define the network explicitly (optional but good practice)
+networks:
+  real-time-dashboard_default:
+    # You can specify a driver if needed, e.g., bridge
+    driver: bridge

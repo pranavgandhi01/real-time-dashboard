@@ -1,3 +1,4 @@
+// backend/fetcher/flight.go
 package fetcher
 
 import (
@@ -5,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os" // Import the os package
 )
 
 // FlightData struct to hold the parsed flight information.
@@ -21,10 +23,17 @@ type FlightData struct {
 	GeoAltitude   float64 `json:"geo_altitude"` // meters
 }
 
-const openSkyURL = "https://opensky-network.org/api/states/all"
+// Default OpenSky URL
+const defaultOpenSkyURL = "https://opensky-network.org/api/states/all"
 
 // FetchFlights fetches flight data from the OpenSky Network API.
 func FetchFlights() ([]FlightData, error) {
+	// Get OpenSky URL from environment variable, or use default
+	openSkyURL := os.Getenv("OPEN_SKY_API_URL")
+	if openSkyURL == "" {
+		openSkyURL = defaultOpenSkyURL
+	}
+
 	resp, err := http.Get(openSkyURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get data from OpenSky: %w", err)
@@ -34,14 +43,12 @@ func FetchFlights() ([]FlightData, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("opensky API returned non-200 status: %d", resp.StatusCode)
 	}
-	
-	body, err := ioutil.ReadAll(resp.Body)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read response body: %w", err)
-    }
 
-	// The API returns a JSON object with a "states" field,
-	// which is an array of state vectors.
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read opensky response body: %w", err)
+	}
+
 	var response struct {
 		Time   int           `json:"time"`
 		States [][]interface{} `json:"states"`
@@ -61,7 +68,7 @@ func FetchFlights() ([]FlightData, error) {
 		// Type assertions with checks to prevent panics.
 		longitude, lonOK := state[5].(float64)
 		latitude, latOK := state[6].(float64)
-		
+
 		// We only care about flights that have coordinate data.
 		if !lonOK || !latOK {
 			continue
@@ -93,16 +100,16 @@ func getString(v interface{}) string {
 	return ""
 }
 
-func getFloat(v interface{}) float64 {
-	if f, ok := v.(float64); ok {
-		return f
-	}
-	return 0.0
-}
-
 func getBool(v interface{}) bool {
 	if b, ok := v.(bool); ok {
 		return b
 	}
 	return false
+}
+
+func getFloat(v interface{}) float64 {
+	if f, ok := v.(float64); ok {
+		return f
+	}
+	return 0.0
 }

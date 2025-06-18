@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"     // Import the os package
+	"strings" // Import strings for splitting
 	"real-time-dashboard/fetcher"
 
 	"github.com/gorilla/websocket"
@@ -12,10 +14,27 @@ import (
 
 // The Upgrader is used to upgrade an HTTP connection to a WebSocket connection.
 var upgrader = websocket.Upgrader{
-	// CheckOrigin allows connections from any origin.
+	// CheckOrigin allows connections from specific origins for security.
 	// In a production environment, you should restrict this to your frontend's domain.
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		allowedOriginsStr := os.Getenv("ALLOWED_ORIGINS")
+		if allowedOriginsStr == "" {
+			// If no specific origins are set, allow all for development (not recommended for production)
+			return true
+		}
+
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return false // No origin header, deny
+		}
+
+		allowedOrigins := strings.Split(allowedOriginsStr, ",")
+		for _, o := range allowedOrigins {
+			if origin == strings.TrimSpace(o) {
+				return true
+			}
+		}
+		return false
 	},
 }
 
@@ -37,7 +56,7 @@ type Hub struct {
 	clients map[*Client]bool
 
 	// Inbound messages from the clients.
-	Broadcast chan []fetcher.FlightData // Corrected to 'Broadcast'
+	broadcast chan []fetcher.FlightData
 
 	// Register requests from the clients.
 	register chan *Client
@@ -49,14 +68,15 @@ type Hub struct {
 // NewHub creates a new Hub instance.
 func NewHub() *Hub {
 	return &Hub{
-		Broadcast:  make(chan []fetcher.FlightData), // Corrected to 'Broadcast'
+		broadcast:  make(chan []fetcher.FlightData),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
 	}
 }
 
-// Run starts the hub's event loop.
+// Run starts the hub's event loop. It handles client registration,
+// unregistration, and message broadcasting.
 func (h *Hub) Run() {
 	for {
 		select {
@@ -69,7 +89,7 @@ func (h *Hub) Run() {
 				close(client.send)
 				log.Println("Client unregistered. Total clients:", len(h.clients))
 			}
-		case flightData := <-h.Broadcast: // Corrected to 'Broadcast'
+		case flightData := <-h.broadcast:
 			// Marshal the flight data to JSON.
 			message, err := json.Marshal(flightData)
 			if err != nil {
@@ -98,7 +118,7 @@ func (c *Client) writePump() {
 		message, ok := <-c.send
 		if !ok {
 			// The hub closed the channel.
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			c.conn.WriteMessage(websocket.CloseMessage, []byte{})\
 			return
 		}
 
@@ -124,7 +144,14 @@ func HandleConnections(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
 	client.hub.register <- client
 
-	// Allow collection of memory referenced by the caller by doing all work in
-	// new goroutines.
+	// Allow collection of old clients to go garbage collected when unregister
+	defer func() {
+		client.hub.unregister <- client
+	}()
+
 	go client.writePump()
+	// No need for a readPump if clients don't send messages back.
+	// If clients were sending messages, a readPump would be needed here.
+	// For this app, it's a broadcast-only system.
+	select {} // Block forever to keep the goroutine alive until unregister
 }

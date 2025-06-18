@@ -4,6 +4,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"   // Import the os package
 	"time"
 	"real-time-dashboard/fetcher"
 	"real-time-dashboard/ws"
@@ -37,10 +38,17 @@ func main() {
 		ws.HandleConnections(hub, w, r)
 	})
 
-	log.Println("HTTP and WebSocket server started on :8080")
+	// Get server port from environment variable, or default to 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Default port
+	}
+
+	serverAddr := ":" + port
+	log.Printf("HTTP and WebSocket server started on %s", serverAddr)
 	// Start the server.
-	err := http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(serverAddr, nil)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatalf("ListenAndServe: %v", err)
 	}
 }
