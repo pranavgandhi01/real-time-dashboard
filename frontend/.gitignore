@@ -1,0 +1,21 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env # Environment variables
+
+# Go
+*.exe # Windows executables
+*.dll # Windows dynamic libraries
+*.so # Linux shared objects
+*.dylib # macOS dynamic libraries
+*.test # Go test binaries
+*.out # Go build output
+vendor/ # Go modules vendor directory
+
+# IDE and OS specific files
+.idea/ # IntelliJ IDEA
+.vscode/ # VS Code
+.DS_Store # macOS
+Thumbs.db # Windows
