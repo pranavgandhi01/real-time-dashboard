@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"     // Import the os package
-	"strings" // Import strings for splitting
+	"os"
+	"strings"
 	"real-time-dashboard/fetcher"
 
 	"github.com/gorilla/websocket"
@@ -14,26 +14,28 @@ import (
 
 // The Upgrader is used to upgrade an HTTP connection to a WebSocket connection.
 var upgrader = websocket.Upgrader{
-	// CheckOrigin allows connections from specific origins for security.
-	// In a production environment, you should restrict this to your frontend's domain.
 	CheckOrigin: func(r *http.Request) bool {
 		allowedOriginsStr := os.Getenv("ALLOWED_ORIGINS")
 		if allowedOriginsStr == "" {
-			// If no specific origins are set, allow all for development (not recommended for production)
+			log.Println("WARN: ALLOWED_ORIGINS environment variable not set. Allowing all WebSocket origins (NOT recommended for production).")
 			return true
 		}
 
 		origin := r.Header.Get("Origin")
 		if origin == "" {
-			return false // No origin header, deny
+			log.Printf("WARN: WebSocket connection denied - no Origin header provided from %s", r.RemoteAddr)
+			return false
 		}
 
 		allowedOrigins := strings.Split(allowedOriginsStr, ",")
 		for _, o := range allowedOrigins {
-			if origin == strings.TrimSpace(o) {
+			trimmedOrigin := strings.TrimSpace(o)
+			if origin == trimmedOrigin {
+				log.Printf("INFO: WebSocket connection allowed for origin '%s' from %s", origin, r.RemoteAddr)
 				return true
 			}
 		}
+		log.Printf("WARN: WebSocket connection denied - origin '%s' not in allowed list from %s", origin, r.RemoteAddr)
 		return false
 	},
 }
@@ -56,7 +58,7 @@ type Hub struct {
 	clients map[*Client]bool
 
 	// Inbound messages from the clients.
-	broadcast chan []fetcher.FlightData
+	Broadcast chan []fetcher.FlightData
 
 	// Register requests from the clients.
 	register chan *Client
@@ -68,7 +70,7 @@ type Hub struct {
 // NewHub creates a new Hub instance.
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []fetcher.FlightData),
+		Broadcast:  make(chan []fetcher.FlightData),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
@@ -78,31 +80,33 @@ func NewHub() *Hub {
 // Run starts the hub's event loop. It handles client registration,
 // unregistration, and message broadcasting.
 func (h *Hub) Run() {
+	log.Println("INFO: WebSocket Hub started.")
 	for {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-			log.Println("Client registered. Total clients:", len(h.clients))
+			log.Printf("INFO: Client registered. Total clients: %d", len(h.clients))
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
-				log.Println("Client unregistered. Total clients:", len(h.clients))
+				log.Printf("INFO: Client unregistered. Total clients: %d", len(h.clients))
 			}
-		case flightData := <-h.broadcast:
-			// Marshal the flight data to JSON.
+		case flightData := <-h.Broadcast:
 			message, err := json.Marshal(flightData)
 			if err != nil {
-				log.Printf("Error marshalling flight data: %v", err)
+				log.Printf("ERROR: Failed to marshal flight data for broadcast: %v", err)
 				continue
 			}
-			// Send the message to all connected clients.
+			log.Printf("DEBUG: Broadcasting %d bytes of flight data to %d clients.", len(message), len(h.clients))
 			for client := range h.clients {
 				select {
 				case client.send <- message:
+					// Message sent successfully
 				default:
 					close(client.send)
 					delete(h.clients, client)
+					log.Printf("WARN: Client send buffer full, disconnecting client. Total clients: %d", len(h.clients))
 				}
 			}
 		}
@@ -112,25 +116,30 @@ func (h *Hub) Run() {
 // writePump pumps messages from the hub to the websocket connection.
 func (c *Client) writePump() {
 	defer func() {
+		c.hub.unregister <- c // Ensure client is unregistered on exit
 		c.conn.Close()
+		log.Printf("INFO: writePump for client %s exiting.", c.conn.RemoteAddr().String())
 	}()
 	for {
 		message, ok := <-c.send
 		if !ok {
-			// The hub closed the channel.
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})\
+			log.Printf("INFO: Hub closed send channel for client %s.", c.conn.RemoteAddr().String())
+			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 			return
 		}
 
 		w, err := c.conn.NextWriter(websocket.TextMessage)
 		if err != nil {
+			log.Printf("ERROR: Failed to get next writer for client %s: %v", c.conn.RemoteAddr().String(), err)
 			return
 		}
 		w.Write(message)
 
 		if err := w.Close(); err != nil {
+			log.Printf("ERROR: Failed to close writer for client %s: %v", c.conn.RemoteAddr().String(), err)
 			return
 		}
+		log.Printf("DEBUG: Sent %d bytes to client %s.", len(message), c.conn.RemoteAddr().String())
 	}
 }
 
@@ -138,20 +147,19 @@ func (c *Client) writePump() {
 func HandleConnections(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Printf("ERROR: Failed to upgrade HTTP to WebSocket for %s: %v", r.RemoteAddr, err)
 		return
 	}
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
 	client.hub.register <- client
+	log.Printf("INFO: WebSocket connection established for client %s", conn.RemoteAddr().String())
 
-	// Allow collection of old clients to go garbage collected when unregister
-	defer func() {
-		client.hub.unregister <- client
-	}()
-
+	// Start the writePump in a goroutine
 	go client.writePump()
-	// No need for a readPump if clients don't send messages back.
-	// If clients were sending messages, a readPump would be needed here.
-	// For this app, it's a broadcast-only system.
-	select {} // Block forever to keep the goroutine alive until unregister
+
+	// Keep the goroutine alive to handle potential read messages (though not used now)
+	// or simply to ensure the client remains registered until the connection closes.
+	// This select{} statement effectively blocks the goroutine until the connection is closed
+	// or something else causes it to exit.
+	select {}
 }
