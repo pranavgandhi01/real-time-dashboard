@@ -1,5 +1,4 @@
-# docker-compose.yml
-version: "3.8"
+# main docker-compose.yml
 
 services:
   backend:
@@ -12,9 +11,14 @@ services:
       - PORT=8080
       - OPEN_SKY_API_URL=https://opensky-network.org/api/states/all
       - ALLOWED_ORIGINS=http://localhost:3000
-      - LOG_LEVEL=INFO # <--- NEW: Set this to INFO, DEBUG, WARN, ERROR, or FATAL
+      - LOG_LEVEL=INFO
+      - KAFKA_BROKER_ADDRESS=broker:29092
+      - KAFKA_TOPIC=flights
+      - KAFKA_GROUP_ID=flight-websocket-group
+      - USE_MOCK_DATA=true
     networks:
       - real-time-dashboard_default
+      - kafka-network # Connect to the Kafka network
 
   frontend:
     build:
@@ -23,7 +27,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_WEBSOCKET_URL=ws://backend:8080/ws
+      # CHANGE THIS LINE:
+      - NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8080/ws
     depends_on:
       - backend
     networks:
@@ -32,3 +37,6 @@ services:
 networks:
   real-time-dashboard_default:
     driver: bridge
+  kafka-network: # Refer to the external network by the name it was actually created with
+    external: true
+    name: kafka_kafka-network

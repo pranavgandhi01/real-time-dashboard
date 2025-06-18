@@ -1,42 +1,46 @@
 # Stage 1: Build the Next.js application
 FROM node:18-alpine AS builder
 
-# Set the working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
-# Using package*.json ensures both package.json and package-lock.json are copied
+# Copy package.json and package-lock.json (or yarn.lock) to install dependencies
 COPY package*.json ./
 
 # Install dependencies
-# This installs 'next' and all other dependencies into node_modules
 RUN npm install
 
 # Copy the rest of the application code
 COPY . .
 
-# Build the application (generates .next folder)
+# Copy the .env.local file for build-time environment variables
+# This is crucial for NEXT_PUBLIC_WEBSOCKET_URL to be picked up
+COPY .env.local ./
+
+# Remove Next.js build cache to ensure a clean rebuild
+RUN rm -rf .next
+
+# Remove node_modules cache
+RUN rm -rf node_modules/.cache
+
+# Build the Next.js application
 RUN npm run build
 
-# Stage 2: Create a production-ready image
+# Stage 2: Create a lightweight production image
 FROM node:18-alpine
 
-# Set the working directory
 WORKDIR /app
 
-# Copy the installed node_modules from the builder stage
-# This ensures 'next' and its dependencies are available for runtime
-COPY --from=builder /app/node_modules ./node_modules
+# Set the production environment
+ENV NODE_ENV=production
 
-# Copy the built Next.js application files
+# Copy built assets and necessary files from the builder stage
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-# Copy package.json to ensure npm start works correctly, even though node_modules is present
 COPY --from=builder /app/package.json ./
 
-# Expose the port Next.js listens on
+# Expose the port Next.js runs on
 EXPOSE 3000
 
-# Set the command to start the server
-# 'npm start' will now correctly use the 'next' binary from the copied node_modules
+# Command to run the application
 CMD ["npm", "start"]

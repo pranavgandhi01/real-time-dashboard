@@ -1,0 +1,61 @@
+# kafka/docker-compose.yml
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.0.1
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kafka-network # Connect to the explicitly defined network
+
+  broker:
+    image: confluentinc/cp-kafka:7.0.1
+    hostname: broker
+    container_name: broker
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092" # For external access from your host machine
+      - "9093:9093" # Another port for internal testing if needed
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      # KAFKA_ADVERTISED_LISTENERS:
+      # PLAINTEXT://<service_name_within_docker_network>:<internal_port>,
+      # PLAINTEXT_HOST://<host_ip_or_localhost>:<exposed_port>
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      # Removed KAFKA_TOPIC, KAFKA_BROKER_ADDRESS, KAFKA_GROUP_ID from here
+      # These are application-specific environment variables for the Go backend, not Kafka broker configuration.
+    networks:
+      - kafka-network # Connect to the explicitly defined network
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.0.1
+    hostname: schema-registry
+    container_name: schema-registry
+    depends_on:
+      - broker # Schema Registry depends on Kafka broker
+    ports:
+      - "8081:8081" # Expose Schema Registry UI/API
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "broker:29092" # Connect to Kafka internal broker address
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081 # Listen on all interfaces on port 8081
+    networks:
+      - kafka-network # Connect to the explicitly defined network
+
+networks:
+  kafka-network: # Explicitly define a network
+    driver: bridge # Standard bridge network
+    # You can optionally give it a specific name that Docker will use globally if you don't want the default
+    # name: my-kafka-network # Uncomment if you want a custom global name, then update main docker-compose.yml accordingly

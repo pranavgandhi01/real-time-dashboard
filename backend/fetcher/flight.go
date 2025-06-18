@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os" // Import os for environment variables
-	flightlog "real-time-dashboard/log" // Import the new log package
+	"os"
+	flightlog "real-time-dashboard/log"
+	"time"
 )
 
 // FlightData struct to hold the parsed flight information.
@@ -27,80 +28,106 @@ type FlightData struct {
 // Default OpenSky URL
 const defaultOpenSkyURL = "https://opensky-network.org/api/states/all"
 
-// FetchFlights fetches flight data from the OpenSky Network API.
+// FetchFlights fetches flight data from the OpenSky Network API with retries,
+// or generates mock data if USE_MOCK_DATA environment variable is "true".
 func FetchFlights() ([]FlightData, error) {
+	// The `GenerateMockFlights` is now in backend/fetcher/mock.go,
+	// but since both files are in the same `fetcher` package,
+	// `GenerateMockFlights` is directly accessible without needing to import
+	// `fetcher/mock` explicitly.
+	if os.Getenv("USE_MOCK_DATA") == "true" {
+		return GenerateMockFlights(), nil
+	}
+
 	openSkyURL := os.Getenv("OPEN_SKY_API_URL")
 	if openSkyURL == "" {
 		openSkyURL = defaultOpenSkyURL
 		flightlog.LogWarn("OPEN_SKY_API_URL not set, using default: %s", openSkyURL)
 	}
 
-	flightlog.LogDebug("Attempting to fetch from OpenSky API: %s", openSkyURL)
-	resp, err := http.Get(openSkyURL)
-	if err != nil {
-		flightlog.LogError("HTTP GET failed for OpenSky API: %v", err)
-		return nil, fmt.Errorf("failed to get data from OpenSky: %w", err)
-	}
-	defer resp.Body.Close()
+	const maxRetries = 3
+	const retryDelay = 2 * time.Second
 
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := ioutil.ReadAll(resp.Body)
-		flightlog.LogError("OpenSky API returned non-200 status %d. Response: %s", resp.StatusCode, string(bodyBytes))
-		return nil, fmt.Errorf("opensky API returned non-200 status: %d", resp.StatusCode)
-	}
+	for i := 0; i < maxRetries; i++ {
+		flightlog.LogDebug("Attempting to fetch from OpenSky API (%d/%d): %s", i+1, maxRetries, openSkyURL)
+		resp, err := http.Get(openSkyURL)
+		if err != nil {
+			flightlog.LogError("HTTP GET failed for OpenSky API (attempt %d/%d): %v", i+1, maxRetries, err)
+			if i < maxRetries-1 {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return nil, fmt.Errorf("failed to get data from OpenSky after %d retries: %w", maxRetries, err)
+		}
+		defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		flightlog.LogError("Failed to read OpenSky response body: %v", err)
-		return nil, fmt.Errorf("failed to read opensky response body: %w", err)
-	}
-
-	var response struct {
-		Time   int           `json:"time"`
-		States [][]interface{} `json:"states"`
-	}
-
-	if err := json.Unmarshal(body, &response); err != nil {
-		// Log only the first 200 characters of the response body for brevity and to avoid excessively long logs
-		flightlog.LogError("Failed to decode OpenSky JSON response: %v. Raw response (first 200 chars): %s", err, string(body[:min(len(body), 200)]))
-		return nil, fmt.Errorf("failed to decode opensky response: %w", err)
-	}
-
-	var flights []FlightData
-	for _, state := range response.States {
-		// Basic validation to ensure we have enough fields.
-		if len(state) < 13 {
-			flightlog.LogWarn("Skipping malformed flight state vector (too short): %v", state)
-			continue
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := ioutil.ReadAll(resp.Body)
+			flightlog.LogError("OpenSky API returned non-200 status %d (attempt %d/%d). Response: %s", resp.StatusCode, i+1, maxRetries, string(bodyBytes))
+			if i < maxRetries-1 {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return nil, fmt.Errorf("opensky API returned non-200 status %d after %d retries", resp.StatusCode, maxRetries)
 		}
 
-		// Type assertions with checks to prevent panics.
-		longitude, lonOK := state[5].(float64)
-		latitude, latOK := state[6].(float64)
-
-		// We only care about flights that have coordinate data.
-		if !lonOK || !latOK {
-			flightlog.LogWarn("Skipping flight with invalid Lat/Lon data: %v", state)
-			continue
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			flightlog.LogError("Failed to read OpenSky response body (attempt %d/%d): %v", i+1, maxRetries, err)
+			if i < maxRetries-1 {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return nil, fmt.Errorf("failed to read opensky response body after %d retries: %w", maxRetries, err)
 		}
 
-		flight := FlightData{
-			ICAO24:        getString(state[0]),
-			Callsign:      getString(state[1]),
-			OriginCountry: getString(state[2]),
-			Longitude:     longitude,
-			Latitude:      latitude,
-			OnGround:      getBool(state[8]),
-			Velocity:      getFloat(state[9]),
-			TrueTrack:     getFloat(state[10]),
-			VerticalRate:  getFloat(state[11]),
-			GeoAltitude:   getFloat(state[13]),
+		var response struct {
+			Time   int           `json:"time"`
+			States [][]interface{} `json:"states"`
 		}
-		flights = append(flights, flight)
+
+		if err := json.Unmarshal(body, &response); err != nil {
+			flightlog.LogError("Failed to decode OpenSky JSON response (attempt %d/%d): %v. Raw response (first 200 chars): %s", i+1, maxRetries, err, string(body[:min(len(body), 200)]))
+			if i < maxRetries-1 {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return nil, fmt.Errorf("failed to decode opensky response after %d retries: %w", maxRetries, err)
+		}
+
+		var flights []FlightData
+		for _, state := range response.States {
+			if len(state) < 13 {
+				flightlog.LogWarn("Skipping malformed flight state vector (too short): %v", state)
+				continue
+			}
+
+			longitude, lonOK := state[5].(float64)
+			latitude, latOK := state[6].(float64)
+
+			if !lonOK || !latOK {
+				flightlog.LogWarn("Skipping flight with invalid Lat/Lon data: %v", state)
+				continue
+			}
+
+			flight := FlightData{
+				ICAO24:        getString(state[0]),
+				Callsign:      getString(state[1]),
+				OriginCountry: getString(state[2]),
+				Longitude:     longitude,
+				Latitude:      latitude,
+				OnGround:      getBool(state[8]),
+				Velocity:      getFloat(state[9]),
+				TrueTrack:     getFloat(state[10]),
+				VerticalRate:  getFloat(state[11]),
+				GeoAltitude:   getFloat(state[13]),
+			}
+			flights = append(flights, flight)
+		}
+		flightlog.LogDebug("Processed %d flight states from OpenSky response.", len(response.States))
+		return flights, nil // Successfully fetched data, exit loop
 	}
-	flightlog.LogDebug("Processed %d flight states from OpenSky response.", len(response.States))
-
-	return flights, nil
+	return nil, fmt.Errorf("unexpected error: should have returned or errored out before this point") // Should not be reached
 }
 
 // Helper functions to safely parse interface{} types from the state vector.

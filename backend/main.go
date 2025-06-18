@@ -2,57 +2,98 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"time"
+
 	"real-time-dashboard/fetcher"
+	flightlog "real-time-dashboard/log" // Assuming you have this custom log package
 	"real-time-dashboard/ws"
-	flightlog "real-time-dashboard/log" // Import the new log package
+
+	"github.com/segmentio/kafka-go" // Import the Kafka library
+)
+
+const (
+	defaultKafkaBroker = "localhost:9092" // Default Kafka broker address
+	defaultKafkaTopic  = "flights"       // Default Kafka topic name
 )
 
 func main() {
-	// The log.SetFlags and currentLogLevel initialization is now in flightlog.init() function.
-	// No need to explicitly call log.SetFlags here.
-
-	// Create a new hub for managing WebSocket connections.
+	// Initialize WebSocket hub (still needed for handling local clients, but will consume from Kafka)
 	hub := ws.NewHub()
-	// Run the hub in a separate goroutine.
-	go hub.Run()
+	go hub.Run() // Start the hub's message processing loop
 
-	// Ticker to fetch data every 15 seconds.
+	// --- Kafka Producer Setup ---
+	kafkaBroker := os.Getenv("KAFKA_BROKER_ADDRESS")
+	if kafkaBroker == "" {
+		kafkaBroker = defaultKafkaBroker
+		flightlog.LogWarn("KAFKA_BROKER_ADDRESS not set, using default: %s", kafkaBroker)
+	}
+
+	kafkaTopic := os.Getenv("KAFKA_TOPIC")
+	if kafkaTopic == "" {
+		kafkaTopic = defaultKafkaTopic
+		flightlog.LogWarn("KAFKA_TOPIC not set, using default: %s", kafkaTopic)
+	}
+
+	// Create a Kafka producer (Writer)
+	w := &kafka.Writer{
+		Addr:     kafka.TCP(kafkaBroker),
+		Topic:    kafkaTopic,
+		Balancer: &kafka.LeastBytes{}, // Choose a balancer (e.g., round-robin, least-bytes)
+	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			flightlog.LogError("failed to close kafka writer: %v", err)
+		}
+	}()
+	// --- End Kafka Producer Setup ---
+
+	// Ticker to fetch data and publish to Kafka every 15 seconds.
 	ticker := time.NewTicker(15 * time.Second)
 	go func() {
 		for t := range ticker.C {
-			flightlog.LogInfo("Starting flight data fetch cycle at %v", t) // Use flightlog.LogInfo
-			// Fetch the flight data.
+			flightlog.LogDebug("Fetching flight data at %v", t)
 			flights, err := fetcher.FetchFlights()
 			if err != nil {
-				flightlog.LogError("Failed to fetch flight data: %v", err) // Use flightlog.LogError
+				flightlog.LogError("Error fetching flight data: %v", err)
 				continue
 			}
-			flightlog.LogInfo("Successfully fetched %d flights. Broadcasting to clients.", len(flights)) // Use flightlog.LogInfo
-			// Broadcast the fetched data to all connected clients.
-			hub.Broadcast <- flights
+
+			// Marshal flights to JSON
+			message, err := json.Marshal(flights)
+			if err != nil {
+				flightlog.LogError("Error marshalling flight data for Kafka: %v", err)
+				continue
+			}
+
+			// Publish to Kafka
+			err = w.WriteMessages(context.Background(),
+				kafka.Message{
+					Value: message,
+				},
+			)
+			if err != nil {
+				flightlog.LogError("Failed to write message to Kafka: %v", err)
+			} else {
+				flightlog.LogDebug("Successfully published %d flights to Kafka topic '%s'", len(flights), kafkaTopic)
+			}
 		}
 	}()
 
 	// Configure the HTTP server to handle WebSocket connections.
+	// This part will eventually consume from Kafka within the hub.
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		flightlog.LogInfo("Incoming WebSocket connection request from %s", r.RemoteAddr) // Use flightlog.LogInfo
 		ws.HandleConnections(hub, w, r)
 	})
 
-	// Get server port from environment variable, or default to 8080
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080" // Default port
-	}
-
-	serverAddr := ":" + port
-	flightlog.LogInfo("HTTP and WebSocket server starting on %s", serverAddr) // Use flightlog.LogInfo
+	log.Println("HTTP and WebSocket server started on :8080")
 	// Start the server.
-	err := http.ListenAndServe(serverAddr, nil)
+	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
-		flightlog.LogFatal("Server failed to start: %v", err) // Use flightlog.LogFatal
+		log.Fatal("ListenAndServe: ", err)
 	}
 }
