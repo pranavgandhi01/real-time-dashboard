@@ -2,16 +2,17 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"os"
 	"time"
 	"real-time-dashboard/fetcher"
 	"real-time-dashboard/ws"
+	flightlog "real-time-dashboard/log" // Import the new log package
 )
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile) // Add file and line number to logs
+	// The log.SetFlags and currentLogLevel initialization is now in flightlog.init() function.
+	// No need to explicitly call log.SetFlags here.
 
 	// Create a new hub for managing WebSocket connections.
 	hub := ws.NewHub()
@@ -22,14 +23,14 @@ func main() {
 	ticker := time.NewTicker(15 * time.Second)
 	go func() {
 		for t := range ticker.C {
-			log.Printf("INFO: Starting flight data fetch cycle at %v", t) // More descriptive log
+			flightlog.LogInfo("Starting flight data fetch cycle at %v", t) // Use flightlog.LogInfo
 			// Fetch the flight data.
 			flights, err := fetcher.FetchFlights()
 			if err != nil {
-				log.Printf("ERROR: Failed to fetch flight data: %v", err) // More descriptive error log
+				flightlog.LogError("Failed to fetch flight data: %v", err) // Use flightlog.LogError
 				continue
 			}
-			log.Printf("INFO: Successfully fetched %d flights. Broadcasting to clients.", len(flights)) // Success log
+			flightlog.LogInfo("Successfully fetched %d flights. Broadcasting to clients.", len(flights)) // Use flightlog.LogInfo
 			// Broadcast the fetched data to all connected clients.
 			hub.Broadcast <- flights
 		}
@@ -37,7 +38,7 @@ func main() {
 
 	// Configure the HTTP server to handle WebSocket connections.
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("INFO: Incoming WebSocket connection request from %s", r.RemoteAddr) // Log new connection attempts
+		flightlog.LogInfo("Incoming WebSocket connection request from %s", r.RemoteAddr) // Use flightlog.LogInfo
 		ws.HandleConnections(hub, w, r)
 	})
 
@@ -48,10 +49,10 @@ func main() {
 	}
 
 	serverAddr := ":" + port
-	log.Printf("INFO: HTTP and WebSocket server starting on %s", serverAddr) // Informative startup log
+	flightlog.LogInfo("HTTP and WebSocket server starting on %s", serverAddr) // Use flightlog.LogInfo
 	// Start the server.
 	err := http.ListenAndServe(serverAddr, nil)
 	if err != nil {
-		log.Fatalf("FATAL: Server failed to start: %v", err) // Use Fatal for unrecoverable errors
+		flightlog.LogFatal("Server failed to start: %v", err) // Use flightlog.LogFatal
 	}
 }
