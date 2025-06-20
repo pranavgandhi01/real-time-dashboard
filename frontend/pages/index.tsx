@@ -34,7 +34,7 @@ export default function Home() {
   const [selectedCountry, setSelectedCountry] = useState("");
   const [statusFilter, setStatusFilter] = useState<'all' | 'air' | 'ground'>('all');
   const [minSpeed, setMinSpeed] = useState(0);
-  const [viewMode, setViewMode] = useState<'map' | 'grid'>('map');
+  const [viewMode, setViewMode] = useState<'map' | 'grid'>('grid');
   
   // Memoized filtered flights
   const filteredFlights = useMemo(() => {
@@ -55,11 +55,13 @@ export default function Home() {
   useEffect(() => {
     const websocketUrl = `${
       process.env.NEXT_PUBLIC_WEBSOCKET_URL || "ws://localhost:8080/ws"
-    }?token=${process.env.NEXT_PUBLIC_WEBSOCKET_TOKEN}`;
+    }?token=${process.env.NEXT_PUBLIC_WEBSOCKET_TOKEN || ""}`;
     let socket: WebSocket;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
-    const baseReconnectDelay = 2000; // 2 seconds
+    const baseReconnectDelay = 3000;
+    
+    console.log('[WebSocket] Connecting to:', websocketUrl);
 
     function connect() {
       socket = new WebSocket(websocketUrl);
@@ -105,34 +107,26 @@ export default function Home() {
       };
 
       socket.onclose = (event) => {
+        console.log('[WebSocket] Connection closed:', event.code, event.reason);
         setStatus("Disconnected");
-        if (process.env.NODE_ENV === 'development') {
-          console.info(`[WebSocket] Connection closed. Code: ${event.code}, Clean: ${event.wasClean}`);
-        }
-        if (!event.wasClean && reconnectAttempts < maxReconnectAttempts) {
-          const delay = baseReconnectDelay * Math.pow(2, reconnectAttempts);
-          setError(
-            `Reconnecting in ${delay / 1000}s... (Attempt ${
-              reconnectAttempts + 1
-            }/${maxReconnectAttempts})`
-          );
+        
+        if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+          const delay = baseReconnectDelay + (reconnectAttempts * 1000);
+          setError(`Reconnecting in ${Math.round(delay/1000)}s... (${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          
           setTimeout(() => {
             reconnectAttempts++;
             connect();
           }, delay);
         } else {
-          setError(
-            `WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`
-          );
+          setError('WebSocket connection failed. Please refresh the page.');
         }
       };
 
       socket.onerror = (event) => {
+        console.error('[WebSocket] Connection error:', event);
         setStatus("Error");
-        setError("WebSocket connection error. Retrying...");
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[WebSocket] Connection error:', event);
-        }
+        setError('WebSocket connection error. Check if backend is running.');
       };
     }
 
@@ -145,45 +139,44 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div>
-          <h1 className="text-4xl font-extrabold text-teal-400">
-            Live Flight Tracker
-          </h1>
-          <p className="text-gray-400 mt-1">Real-time flight monitoring dashboard</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex bg-gray-800 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('map')}
-              className={`px-3 py-1 rounded text-sm ${
-                viewMode === 'map' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Map View
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`px-3 py-1 rounded text-sm ${
-                viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Grid View
-            </button>
+      <header className="mb-8">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
+          <div>
+            <h1 className="text-4xl font-extrabold text-teal-400 mb-1">
+              Live Flight Tracker
+            </h1>
+            <p className="text-gray-400">Real-time flight monitoring dashboard</p>
           </div>
-          <div className="text-lg">
-            Status:{" "}
-            <span
-              className={`font-semibold ${
-                status === "Connected"
-                  ? "text-green-500"
-                  : status === "Disconnected"
-                  ? "text-yellow-500"
-                  : "text-red-500"
-              }`}
-            >
-              {status}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex bg-gray-800 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('map')}
+                className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                  viewMode === 'map' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                🗺️ Map View
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                  viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                📋 Grid View
+              </button>
+            </div>
+            <div className="flex items-center gap-2 bg-gray-800 px-3 py-2 rounded-lg">
+              <div className={`w-2 h-2 rounded-full ${
+                status === "Connected" ? "bg-green-500" : "bg-red-500"
+              }`}></div>
+              <span className="text-sm text-gray-300">Status:</span>
+              <span className={`text-sm font-medium ${
+                status === "Connected" ? "text-green-400" : "text-red-400"
+              }`}>
+                {status}
+              </span>
+            </div>
           </div>
         </div>
       </header>
@@ -209,58 +202,44 @@ export default function Home() {
       {viewMode === 'map' ? (
         <FlightMap flights={filteredFlights} />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="bg-gray-800 rounded-lg overflow-hidden">
           {filteredFlights.length > 0 ? (
-            filteredFlights.map((flight) => (
-            <div
-              key={flight.icao24}
-              className="bg-gray-800 rounded-lg p-4 shadow-lg transform hover:scale-105 transition-transform duration-300"
-            >
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="text-xl font-bold text-teal-300">
-                  {flight.callsign || "N/A"}
-                </h2>
-                <span
-                  className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                    flight.on_ground
-                      ? "bg-yellow-600 text-yellow-100"
-                      : "bg-blue-600 text-blue-100"
-                  }`}
-                >
-                  {flight.on_ground ? "On Ground" : "In Air"}
-                </span>
-              </div>
-              <p className="text-gray-400 text-sm mb-4">
-                From: {flight.origin_country}
-              </p>
-              <div className="text-sm space-y-2">
-                <p>
-                  <span className="font-semibold text-gray-300">Altitude:</span>{" "}
-                  {flight.geo_altitude.toFixed(0)} m
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-300">Speed:</span>{" "}
-                  {(flight.velocity * 3.6).toFixed(2)} km/h
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-300">Heading:</span>{" "}
-                  {flight.true_track.toFixed(2)}°
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-300">
-                    Vertical Rate:
-                  </span>{" "}
-                  {flight.vertical_rate.toFixed(2)} m/s
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-300">Lat/Lon:</span>{" "}
-                  {flight.latitude.toFixed(4)}, {flight.longitude.toFixed(4)}
-                </p>
-              </div>
-            </div>
-          ))
+            <table className="w-full">
+              <thead className="bg-gray-700">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Flight</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Country</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Altitude</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Speed</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Heading</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Position</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFlights.map((flight, index) => (
+                  <tr key={flight.icao24} className={`border-t border-gray-700 hover:bg-gray-750 ${index % 2 === 0 ? 'bg-gray-800' : 'bg-gray-850'}`}>
+                    <td className="px-4 py-3">
+                      <span className="font-bold text-teal-300">{flight.callsign || "N/A"}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        flight.on_ground ? "bg-yellow-600 text-yellow-100" : "bg-blue-600 text-blue-100"
+                      }`}>
+                        {flight.on_ground ? "Ground" : "Air"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-300">{flight.origin_country}</td>
+                    <td className="px-4 py-3 text-sm text-gray-300">{flight.geo_altitude.toFixed(0)} m</td>
+                    <td className="px-4 py-3 text-sm text-gray-300">{(flight.velocity * 3.6).toFixed(1)} km/h</td>
+                    <td className="px-4 py-3 text-sm text-gray-300">{flight.true_track.toFixed(0)}°</td>
+                    <td className="px-4 py-3 text-sm text-gray-300">{flight.latitude.toFixed(2)}, {flight.longitude.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
-            <div className="col-span-full text-center text-gray-500 text-xl py-10">
+            <div className="text-center text-gray-500 py-10">
               {status === "Connected"
                 ? filteredFlights.length === 0 && flights.length > 0
                   ? "No flights match current filters"

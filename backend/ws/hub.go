@@ -4,17 +4,17 @@ package ws
 import (
 	"bytes"
 	"compress/gzip"
-	"context" // Import context for Kafka reader operations
-	// "encoding/json" // REMOVED: No longer directly used for marshal/unmarshal
+	"context"
 	"net/http"
-	"os" // Import os for environment variables
+	"os"
 	"strings"
 	flightlog "real-time-dashboard/log"
 	"real-time-dashboard/schema"
-	"time" // Import time for consumer group rebalance
+	"real-time-dashboard/config"
+	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/segmentio/kafka-go" // Import the Kafka library
+	"github.com/segmentio/kafka-go"
 )
 
 const (
@@ -77,46 +77,76 @@ type Hub struct {
 
 	// Kafka Reader for consuming flight data
 	kafkaReader *kafka.Reader
+
+	// Configuration
+	config *config.Config
+
+	// Connection pool metrics
+	activeConnections int
 }
 
 // NewHub creates a new Hub instance.
-func NewHub() *Hub {
-	kafkaBroker := os.Getenv("KAFKA_BROKER_ADDRESS")
-	if kafkaBroker == "" {
-		kafkaBroker = defaultKafkaBroker
-		flightlog.LogWarn("KAFKA_BROKER_ADDRESS not set, using default for hub: %s", kafkaBroker)
-	}
-
-	kafkaTopic := os.Getenv("KAFKA_TOPIC")
-	if kafkaTopic == "" {
-		kafkaTopic = defaultKafkaTopic
-		flightlog.LogWarn("KAFKA_TOPIC not set, using default for hub: %s", kafkaTopic)
-	}
-
-	kafkaGroupID := os.Getenv("KAFKA_GROUP_ID")
-	if kafkaGroupID == "" {
-		kafkaGroupID = defaultKafkaGroupID
-		flightlog.LogWarn("KAFKA_GROUP_ID not set, using default for hub: %s", kafkaGroupID)
-	}
-
-	// Create a new Kafka consumer (Reader)
-	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{kafkaBroker},
-		Topic:   kafkaTopic,
-		GroupID: kafkaGroupID, // Consumer group for distributed consumption
-		MinBytes: 10e3, // 10KB
-		MaxBytes: 10e6, // 10MB
-		MaxWait:    1 * time.Second, // Maximum amount of time to wait for new data to come when fetching messages from kafka.
-		StartOffset: kafka.LastOffset, // Start consuming from the latest message
-		// If no messages are available after MaxWait, it will return an empty list or an error, enabling retry.
-	})
+func NewHub(cfg *config.Config) *Hub {
+	// Create Kafka reader with retry logic
+	r := createKafkaReader(cfg)
 
 	return &Hub{
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
-		kafkaReader: r, // Assign the Kafka reader to the hub
+		kafkaReader: r,
+		config: cfg,
+		activeConnections: 0,
 	}
+}
+
+// createKafkaReader creates Kafka reader with connection retry
+func createKafkaReader(cfg *config.Config) *kafka.Reader {
+	for attempt := 1; attempt <= cfg.Kafka.MaxRetries; attempt++ {
+		flightlog.LogInfo("Attempting Kafka connection (%d/%d) to %s", attempt, cfg.Kafka.MaxRetries, cfg.Kafka.BrokerAddress)
+		
+		r := kafka.NewReader(kafka.ReaderConfig{
+			Brokers: []string{cfg.Kafka.BrokerAddress},
+			Topic:   cfg.Kafka.Topic,
+			GroupID: cfg.Kafka.GroupID,
+			MinBytes: 10e3,
+			MaxBytes: 10e6,
+			MaxWait: 1 * time.Second,
+			StartOffset: kafka.LastOffset,
+		})
+		
+		// Test connection
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := r.ReadMessage(ctx)
+		cancel()
+		
+		if err == nil || !isConnectionError(err) {
+			flightlog.LogInfo("Kafka connection established")
+			return r
+		}
+		
+		flightlog.LogWarn("Kafka connection failed (attempt %d/%d): %v", attempt, cfg.Kafka.MaxRetries, err)
+		r.Close()
+		
+		if attempt < cfg.Kafka.MaxRetries {
+			time.Sleep(time.Duration(cfg.Kafka.RetryInterval) * time.Second)
+		}
+	}
+	
+	if cfg.Kafka.FailFast {
+		flightlog.LogFatal("Failed to connect to Kafka after %d attempts, exiting", cfg.Kafka.MaxRetries)
+	}
+	
+	flightlog.LogWarn("Kafka unavailable, continuing without Kafka integration")
+	return nil
+}
+
+// isConnectionError checks if error is connection-related
+func isConnectionError(err error) bool {
+	errorStr := err.Error()
+	return strings.Contains(errorStr, "connection refused") ||
+		strings.Contains(errorStr, "no such host") ||
+		strings.Contains(errorStr, "timeout")
 }
 
 // Run starts the hub's operations, including Kafka message consumption.
@@ -127,13 +157,20 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
+			if h.activeConnections >= h.config.WebSocket.MaxConnections {
+				flightlog.LogWarn("Connection pool full, rejecting client")
+				client.conn.Close()
+				continue
+			}
 			h.clients[client] = true
-			flightlog.LogDebug("Client registered. Total clients: %d", len(h.clients))
+			h.activeConnections++
+			flightlog.LogDebug("Client registered. Active: %d/%d", h.activeConnections, h.config.WebSocket.MaxConnections)
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
-				flightlog.LogDebug("Client unregistered. Total clients: %d", len(h.clients))
+				h.activeConnections--
+				flightlog.LogDebug("Client unregistered. Active: %d/%d", h.activeConnections, h.config.WebSocket.MaxConnections)
 			}
 		// The broadcast channel is no longer directly used for fetching data from main.
 		// It's effectively replaced by the Kafka consumer.
@@ -143,6 +180,11 @@ func (h *Hub) Run() {
 
 // readKafkaMessages consumes messages from the Kafka topic and broadcasts them to clients.
 func (h *Hub) readKafkaMessages() {
+    if h.kafkaReader == nil {
+        flightlog.LogWarn("Kafka reader not available, skipping message consumption")
+        return
+    }
+    
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
     defer h.kafkaReader.Close()
@@ -274,12 +316,16 @@ func (c *Client) readPump() {
 // HandleConnections handles websocket requests from the peer.
 func HandleConnections(hub *Hub, w http.ResponseWriter, r *http.Request) {
     token := r.URL.Query().Get("token")
-    expectedToken := os.Getenv("WEBSOCKET_TOKEN")
+    expectedToken := hub.config.WebSocket.Token
+    
+    // Only validate token if one is configured
     if expectedToken != "" && token != expectedToken {
         http.Error(w, "Unauthorized", http.StatusUnauthorized)
-        flightlog.LogWarn("Unauthorized WebSocket connection attempt")
+        flightlog.LogWarn("Unauthorized WebSocket connection attempt from %s", r.RemoteAddr)
         return
     }
+    
+    flightlog.LogInfo("WebSocket connection authorized from %s", r.RemoteAddr)
     conn, err := upgrader.Upgrade(w, r, nil)
     if err != nil {
         flightlog.LogError("WebSocket upgrade failed: %v", err)
@@ -289,5 +335,5 @@ func HandleConnections(hub *Hub, w http.ResponseWriter, r *http.Request) {
     client.hub.register <- client
     flightlog.LogInfo("WebSocket connection established from %s", r.RemoteAddr)
     go client.writePump()
-    client.readPump()
+    go client.readPump()
 }

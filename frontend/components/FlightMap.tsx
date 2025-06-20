@@ -1,14 +1,29 @@
-import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import performanceConfig from '../config/performance';
 
-// Fix Leaflet default icons
+// Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl: '/marker-icon-2x.png',
+  iconUrl: '/marker-icon.png',
+  shadowUrl: '/marker-shadow.png',
 });
+
+// Custom flight icon
+const createFlightIcon = (onGround: boolean, heading: number) => {
+  const color = onGround ? '#f59e0b' : '#3b82f6';
+  const size = onGround ? 12 : 16;
+  
+  return L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid white;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);transform:rotate(${heading}deg)"></div>`,
+    className: 'flight-icon',
+    iconSize: [size + 4, size + 4],
+    iconAnchor: [(size + 4) / 2, (size + 4) / 2],
+  });
+};
 
 interface FlightData {
   icao24: string;
@@ -27,62 +42,53 @@ interface FlightMapProps {
   flights: FlightData[];
 }
 
-// Custom flight icon
-const createFlightIcon = (onGround: boolean, heading: number) => {
-  const color = onGround ? '#fbbf24' : '#3b82f6';
-  return L.divIcon({
-    html: `<div style="transform: rotate(${heading}deg); color: ${color}; font-size: 16px; text-align: center; line-height: 20px;">✈️</div>`,
-    className: 'flight-icon',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
-    popupAnchor: [0, -10],
-  });
-};
-
-// Component to update map bounds
-function MapUpdater({ flights }: { flights: FlightData[] }) {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (flights.length > 0) {
-      const bounds = L.latLngBounds(
-        flights.map(flight => [flight.latitude, flight.longitude])
-      );
-      map.fitBounds(bounds, { padding: [20, 20] });
-    }
-  }, [flights, map]);
-  
-  return null;
-}
-
 export default function FlightMap({ flights }: FlightMapProps) {
+  const validFlights = useMemo(() => 
+    flights.filter(f => 
+      f.latitude >= -90 && f.latitude <= 90 && 
+      f.longitude >= -180 && f.longitude <= 180
+    ), [flights]
+  );
+
+  // Lazy loading for large datasets
+  const displayFlights = useMemo(() => {
+    const maxDisplay = performanceConfig.maxDisplayFlights;
+    if (validFlights.length <= maxDisplay) {
+      return validFlights;
+    }
+    console.log(`[FlightMap] Lazy loading: showing ${maxDisplay}/${validFlights.length} flights`);
+    return validFlights.slice(0, maxDisplay);
+  }, [validFlights]);
+
+  if (validFlights.length === 0) {
+    return (
+      <div className="h-96 w-full bg-gray-800 border border-gray-700 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-2">🗺️</div>
+          <div className="text-gray-400">Waiting for flight data...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-96 w-full rounded-lg overflow-hidden shadow-lg">
+    <div style={{ height: '400px', width: '100%' }}>
       <MapContainer
-        center={[40.7128, -74.0060]} // NYC default
+        center={[40, 0]}
         zoom={2}
         style={{ height: '100%', width: '100%' }}
-        className="z-0"
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <MapUpdater flights={flights} />
-        {flights.map((flight) => (
-          <Marker
-            key={flight.icao24}
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        {displayFlights.map((flight) => (
+          <Marker 
+            key={flight.icao24} 
             position={[flight.latitude, flight.longitude]}
             icon={createFlightIcon(flight.on_ground, flight.true_track)}
           >
             <Popup>
-              <div className="text-sm">
-                <h3 className="font-bold text-blue-600">{flight.callsign || 'N/A'}</h3>
-                <p><strong>From:</strong> {flight.origin_country}</p>
-                <p><strong>Altitude:</strong> {flight.geo_altitude.toFixed(0)} m</p>
-                <p><strong>Speed:</strong> {(flight.velocity * 3.6).toFixed(1)} km/h</p>
-                <p><strong>Status:</strong> {flight.on_ground ? 'On Ground' : 'In Air'}</p>
-              </div>
+              <strong>{flight.callsign}</strong><br/>
+              {flight.origin_country}<br/>
+              {flight.on_ground ? 'On Ground' : 'In Air'}
             </Popup>
           </Marker>
         ))}

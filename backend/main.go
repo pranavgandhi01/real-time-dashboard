@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"real-time-dashboard/cache"
+	"real-time-dashboard/config"
 	"real-time-dashboard/fetcher"
 	"real-time-dashboard/health"
 	flightlog "real-time-dashboard/log"
@@ -44,6 +45,10 @@ const (
 )
 
 func main() {
+    // Load configuration
+    cfg := config.Load()
+    flightlog.LogInfo("Configuration loaded: MaxConnections=%d, Port=%s", cfg.WebSocket.MaxConnections, cfg.WebSocket.Port)
+    
     // Initialize Schema Registry
     if err := schema.InitSchemaRegistry(); err != nil {
         flightlog.LogWarn("Schema Registry initialization failed: %v", err)
@@ -54,28 +59,16 @@ func main() {
         flightlog.LogWarn("Redis initialization failed: %v", err)
     }
 
-    hub := ws.NewHub()
+    hub := ws.NewHub(cfg)
     go hub.Run()
 
     // Note: Client count tracking removed due to unexported field
 
-    // Kafka producer setup
-    kafkaBroker := os.Getenv("KAFKA_BROKER_ADDRESS")
-    if kafkaBroker == "" {
-        kafkaBroker = defaultKafkaBroker
-        flightlog.LogWarn("KAFKA_BROKER_ADDRESS not set, using default: %s", kafkaBroker)
+    // Kafka producer setup with connection test
+    w := createKafkaWriter(cfg)
+    if w != nil {
+        defer w.Close()
     }
-    kafkaTopic := os.Getenv("KAFKA_TOPIC")
-    if kafkaTopic == "" {
-        kafkaTopic = defaultKafkaTopic
-        flightlog.LogWarn("KAFKA_TOPIC not set, using default: %s", kafkaTopic)
-    }
-    w := &kafka.Writer{
-        Addr:     kafka.TCP(kafkaBroker),
-        Topic:    kafkaTopic,
-        Balancer: &kafka.LeastBytes{},
-    }
-    defer w.Close()
 
     // Fetch flights with latency tracking
     ticker := time.NewTicker(15 * time.Second)
@@ -100,11 +93,15 @@ func main() {
                 flightlog.LogError("Schema validation failed: %v", err)
                 continue
             }
-            err = w.WriteMessages(context.Background(), kafka.Message{Value: message})
-            if err != nil {
-                flightlog.LogError("Failed to write message to Kafka: %v", err)
+            if w != nil {
+                err = w.WriteMessages(context.Background(), kafka.Message{Value: message})
+                if err != nil {
+                    flightlog.LogError("Failed to write message to Kafka: %v", err)
+                } else {
+                    flightlog.LogDebug("Successfully published %d flights to Kafka topic '%s'", len(flights), cfg.Kafka.Topic)
+                }
             } else {
-                flightlog.LogDebug("Successfully published %d flights to Kafka topic '%s'", len(flights), kafkaTopic)
+                flightlog.LogDebug("Kafka writer unavailable, skipping message publish")
             }
         }
     }()
@@ -123,10 +120,7 @@ func main() {
         ws.HandleConnections(hub, w, r)
     })
 
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
-    }
+    port := cfg.WebSocket.Port
     
     server := &http.Server{
         Addr: ":" + port,
@@ -151,8 +145,10 @@ func main() {
         }
         
         // Close Kafka writer
-        if err := w.Close(); err != nil {
-            flightlog.LogError("Kafka writer close error: %v", err)
+        if w != nil {
+            if err := w.Close(); err != nil {
+                flightlog.LogError("Kafka writer close error: %v", err)
+            }
         }
         
         // Close Redis
@@ -179,4 +175,46 @@ func main() {
             flightlog.LogFatal("Failed to start HTTP server: %v", err)
         }
     }
+}
+
+// createKafkaWriter creates Kafka writer with connection test
+func createKafkaWriter(cfg *config.Config) *kafka.Writer {
+    for attempt := 1; attempt <= cfg.Kafka.MaxRetries; attempt++ {
+        flightlog.LogInfo("Testing Kafka writer connection (%d/%d) to %s", attempt, cfg.Kafka.MaxRetries, cfg.Kafka.BrokerAddress)
+        
+        w := &kafka.Writer{
+            Addr:         kafka.TCP(cfg.Kafka.BrokerAddress),
+            Topic:        cfg.Kafka.Topic,
+            Balancer:     &kafka.LeastBytes{},
+            BatchSize:    cfg.Kafka.BatchSize,
+            BatchTimeout: time.Duration(cfg.Kafka.BatchTimeout) * time.Millisecond,
+            MaxAttempts:  cfg.Kafka.MaxAttempts,
+            WriteTimeout: time.Duration(cfg.Kafka.WriteTimeout) * time.Second,
+            ReadTimeout:  time.Duration(cfg.Kafka.ReadTimeout) * time.Second,
+        }
+        
+        // Test connection with a small message
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        err := w.WriteMessages(ctx, kafka.Message{Value: []byte("test")})
+        cancel()
+        
+        if err == nil {
+            flightlog.LogInfo("Kafka writer connection established")
+            return w
+        }
+        
+        flightlog.LogWarn("Kafka writer connection failed (attempt %d/%d): %v", attempt, cfg.Kafka.MaxRetries, err)
+        w.Close()
+        
+        if attempt < cfg.Kafka.MaxRetries {
+            time.Sleep(time.Duration(cfg.Kafka.RetryInterval) * time.Second)
+        }
+    }
+    
+    if cfg.Kafka.FailFast {
+        flightlog.LogFatal("Failed to connect Kafka writer after %d attempts, exiting", cfg.Kafka.MaxRetries)
+    }
+    
+    flightlog.LogWarn("Kafka writer unavailable, continuing without Kafka publishing")
+    return nil
 }

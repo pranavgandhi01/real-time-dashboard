@@ -28,32 +28,26 @@ export default function FlightStats({ flights }: FlightStatsProps) {
 
   const countries = Array.from(new Set(flights.map(f => f.origin_country))).length;
 
+  const stats = [
+    { label: 'Total Flights', value: totalFlights, color: 'text-blue-400', icon: '✈️', bg: 'bg-blue-500/10' },
+    { label: 'In Air', value: inAir, color: 'text-green-400', icon: '🚁', bg: 'bg-green-500/10' },
+    { label: 'On Ground', value: onGround, color: 'text-yellow-400', icon: '🛩️', bg: 'bg-yellow-500/10' },
+    { label: 'Avg Speed (km/h)', value: avgSpeed, color: 'text-purple-400', icon: '📊', bg: 'bg-purple-500/10' },
+    { label: 'Avg Altitude (m)', value: avgAltitude, color: 'text-indigo-400', icon: '⛰️', bg: 'bg-indigo-500/10' },
+    { label: 'Countries', value: countries, color: 'text-pink-400', icon: '🌍', bg: 'bg-pink-500/10' },
+  ];
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-      <div className="bg-gray-800 p-4 rounded-lg text-center">
-        <div className="text-2xl font-bold text-blue-400">{totalFlights}</div>
-        <div className="text-sm text-gray-400">Total Flights</div>
-      </div>
-      <div className="bg-gray-800 p-4 rounded-lg text-center">
-        <div className="text-2xl font-bold text-green-400">{inAir}</div>
-        <div className="text-sm text-gray-400">In Air</div>
-      </div>
-      <div className="bg-gray-800 p-4 rounded-lg text-center">
-        <div className="text-2xl font-bold text-yellow-400">{onGround}</div>
-        <div className="text-sm text-gray-400">On Ground</div>
-      </div>
-      <div className="bg-gray-800 p-4 rounded-lg text-center">
-        <div className="text-2xl font-bold text-purple-400">{avgSpeed}</div>
-        <div className="text-sm text-gray-400">Avg Speed (km/h)</div>
-      </div>
-      <div className="bg-gray-800 p-4 rounded-lg text-center">
-        <div className="text-2xl font-bold text-indigo-400">{avgAltitude}</div>
-        <div className="text-sm text-gray-400">Avg Altitude (m)</div>
-      </div>
-      <div className="bg-gray-800 p-4 rounded-lg text-center">
-        <div className="text-2xl font-bold text-pink-400">{countries}</div>
-        <div className="text-sm text-gray-400">Countries</div>
-      </div>
+      {stats.map((stat, index) => (
+        <div key={index} className={`bg-gray-800 border border-gray-700 p-3 rounded-lg`}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{stat.icon}</span>
+            <span className="text-sm text-gray-300">{stat.label}:</span>
+            <span className={`text-lg font-bold ${stat.color}`}>{stat.value}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
