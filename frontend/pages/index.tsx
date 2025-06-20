@@ -1,5 +1,6 @@
 // frontend/pages/index.tsx
 import { useEffect, useState } from "react";
+import pako from "pako";
 
 // Define the structure of the flight data we expect from the backend
 interface FlightData {
@@ -21,64 +22,95 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null); // New state for error messages
 
   useEffect(() => {
-    // Use environment variable for WebSocket URL
-    const websocketUrl =
-      process.env.NEXT_PUBLIC_WEBSOCKET_URL || "ws://localhost:8080/ws";
-    console.log(`Attempting to connect to WebSocket: ${websocketUrl}`);
+    const websocketUrl = `${
+      process.env.NEXT_PUBLIC_WEBSOCKET_URL || "ws://localhost:8080/ws"
+    }?token=${process.env.NEXT_PUBLIC_WEBSOCKET_TOKEN}`;
+    let socket: WebSocket;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    const baseReconnectDelay = 2000; // 2 seconds
 
-    const socket = new WebSocket(websocketUrl);
+    function connect() {
+      socket = new WebSocket(websocketUrl);
+      socket.binaryType = 'arraybuffer'; // Ensure binary data is received as ArrayBuffer
+      setStatus("Connecting...");
 
-    socket.onopen = () => {
-      setStatus("Connected");
-      setError(null); // Clear any previous errors
-      console.log("WebSocket connection established");
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const data: FlightData[] = JSON.parse(event.data);
-        // We might get null if the fetch failed, so we check for it.
-        if (data) {
-          setFlights(data);
-          setError(null); // Clear errors on successful data reception
-        } else {
-          setError("Received empty or invalid flight data from server.");
+      socket.onopen = () => {
+        setStatus("Connected");
+        setError(null);
+        reconnectAttempts = 0; // Reset attempts on successful connection
+        if (process.env.NODE_ENV === 'development') {
+          console.info('[WebSocket] Connection established');
         }
-      } catch (parseError) {
-        console.error("Failed to parse flight data:", parseError);
-        setError(
-          `Failed to parse flight data: ${
-            parseError instanceof Error
-              ? parseError.message
-              : String(parseError)
-          }`
-        );
-      }
-    };
+      };
 
-    socket.onclose = (event) => {
-      setStatus("Disconnected");
-      console.log("WebSocket connection closed", event);
-      if (!event.wasClean) {
-        setError(
-          `WebSocket disconnected unexpectedly. Code: ${event.code}, Reason: ${event.reason}`
-        );
-      } else {
-        setError(null); // Clear error if disconnection was clean
-      }
-    };
+      socket.onmessage = (event) => {
+        try {
+          // Handle binary compressed data
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[WebSocket] Received data type:', typeof event.data, 'Size:', event.data.byteLength || event.data.length);
+          }
+          const compressedData = new Uint8Array(event.data);
+          const decompressed = pako.ungzip(compressedData, { to: "string" });
+          const data: FlightData[] = JSON.parse(decompressed);
+          if (data && Array.isArray(data)) {
+            setFlights(data);
+            setError(null);
+          } else {
+            setError("Received empty or invalid flight data from server.");
+          }
+        } catch (error) {
+          if (error instanceof SyntaxError) {
+            setError(`Failed to parse flight data: Invalid JSON format`);
+          } else if (error instanceof Error) {
+            setError(`Error processing flight data: ${error.message}`);
+          } else {
+            setError(`Unknown error occurred while processing flight data`);
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[WebSocket] Message processing error:', error);
+          }
+        }
+      };
 
-    socket.onerror = (wsError) => {
-      setStatus("Error");
-      console.error("WebSocket error:", wsError);
-      setError("WebSocket connection error. Please check the backend server.");
-    };
+      socket.onclose = (event) => {
+        setStatus("Disconnected");
+        if (process.env.NODE_ENV === 'development') {
+          console.info(`[WebSocket] Connection closed. Code: ${event.code}, Clean: ${event.wasClean}`);
+        }
+        if (!event.wasClean && reconnectAttempts < maxReconnectAttempts) {
+          const delay = baseReconnectDelay * Math.pow(2, reconnectAttempts);
+          setError(
+            `Reconnecting in ${delay / 1000}s... (Attempt ${
+              reconnectAttempts + 1
+            }/${maxReconnectAttempts})`
+          );
+          setTimeout(() => {
+            reconnectAttempts++;
+            connect();
+          }, delay);
+        } else {
+          setError(
+            `WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`
+          );
+        }
+      };
 
-    // Cleanup function to close the WebSocket connection when the component unmounts
+      socket.onerror = (event) => {
+        setStatus("Error");
+        setError("WebSocket connection error. Retrying...");
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[WebSocket] Connection error:', event);
+        }
+      };
+    }
+
+    connect();
+
     return () => {
       socket.close();
     };
-  }, []); // Empty dependency array means this effect runs once on mount
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">

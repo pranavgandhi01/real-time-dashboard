@@ -4,17 +4,16 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # Copy package.json and package-lock.json (or yarn.lock) to install dependencies
-COPY package*.json ./
+COPY frontend/package*.json ./
 
 # Install dependencies
 RUN npm install
 
 # Copy the rest of the application code
-COPY . .
+COPY frontend/ .
 
-# Copy the .env.local file for build-time environment variables
-# This is crucial for NEXT_PUBLIC_WEBSOCKET_URL to be picked up
-COPY .env.local ./
+# Copy environment files for build-time variables
+COPY .env.frontend ./.env.local
 
 # Remove Next.js build cache to ensure a clean rebuild
 RUN rm -rf .next
@@ -38,6 +37,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/.env.local ./
 
 # Expose the port Next.js runs on
 EXPOSE 3000

@@ -1,5 +1,4 @@
-# main docker-compose.yml
-
+# Production docker-compose configuration
 services:
   backend:
     build:
@@ -8,19 +7,21 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - .env
+      - .env.production
+    volumes:
+      - ./certs:/certs:ro
     networks:
       - real-time-dashboard_default
       - kafka-network
 
   frontend:
     build:
-      context: .
-      dockerfile: ./frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     env_file:
-      - .env.frontend
+      - .env.frontend.production
     depends_on:
       - backend
     networks:
@@ -29,6 +30,6 @@ services:
 networks:
   real-time-dashboard_default:
     driver: bridge
-  kafka-network: # Refer to the external network by the name it was actually created with
+  kafka-network:
     external: true
     name: kafka_kafka-network

@@ -2,12 +2,14 @@
 package ws
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context" // Import context for Kafka reader operations
 	// "encoding/json" // REMOVED: No longer directly used for marshal/unmarshal
-	"log"
 	"net/http"
 	"os" // Import os for environment variables
 	flightlog "real-time-dashboard/log"
+	"real-time-dashboard/schema"
 	"time" // Import time for consumer group rebalance
 
 	"github.com/gorilla/websocket"
@@ -24,11 +26,15 @@ const (
 
 // The Upgrader is used to upgrade an HTTP connection to a WebSocket connection.
 var upgrader = websocket.Upgrader{
-	// CheckOrigin allows connections from any origin.
-	// In a production environment, you should restrict this to your frontend's domain.
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+    CheckOrigin: func(r *http.Request) bool {
+        allowedOrigin := os.Getenv("ALLOWED_ORIGINS")
+        if allowedOrigin == "" {
+            allowedOrigin = "http://localhost:3000"
+            flightlog.LogWarn("ALLOWED_ORIGINS not set, using default: %s", allowedOrigin)
+        }
+        origin := r.Header.Get("Origin")
+        return origin == allowedOrigin
+    },
 }
 
 // Client is a middleman between the websocket connection and the hub.
@@ -122,66 +128,95 @@ func (h *Hub) Run() {
 
 // readKafkaMessages consumes messages from the Kafka topic and broadcasts them to clients.
 func (h *Hub) readKafkaMessages() {
-	defer func() {
-		if err := h.kafkaReader.Close(); err != nil {
-			flightlog.LogError("failed to close kafka reader: %v", err)
-		}
-	}()
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    defer h.kafkaReader.Close()
 
-	flightlog.LogInfo("Starting Kafka consumer for topic '%s' with group '%s' on broker '%s'",
-		h.kafkaReader.Config().Topic, h.kafkaReader.Config().GroupID, h.kafkaReader.Config().Brokers[0])
+    flightlog.LogInfo("Starting Kafka consumer for topic '%s' with group '%s' on broker '%s'",
+        h.kafkaReader.Config().Topic, h.kafkaReader.Config().GroupID, h.kafkaReader.Config().Brokers[0])
 
-	for {
-		m, err := h.kafkaReader.ReadMessage(context.Background())
-		if err != nil {
-			flightlog.LogError("Error reading message from Kafka: %v", err)
-			// Depending on the error, you might want to exit, retry, or log and continue.
-			// For now, just log and continue to try reading next message.
-			time.Sleep(1 * time.Second) // Small delay before retrying to avoid tight loop on persistent errors
-			continue
-		}
+    for {
+        select {
+        case <-ctx.Done():
+            flightlog.LogInfo("Shutting down Kafka consumer")
+            return
+        default:
+            m, err := h.kafkaReader.ReadMessage(ctx)
+            if err != nil {
+                if err == context.Canceled {
+                    return
+                }
+                flightlog.LogError("Error reading message from Kafka: %v", err)
+                time.Sleep(2 * time.Second)
+                continue
+            }
 
-		flightlog.LogDebug("Received message from Kafka partition %d offset %d: %s", m.Partition, m.Offset, string(m.Value))
+            flightlog.LogDebug("Received message from Kafka partition %d offset %d: %s", m.Partition, m.Offset, string(m.Value))
+            
+            // Validate message against schema before broadcasting
+            if err := schema.ValidateFlightData(m.Value); err != nil {
+                flightlog.LogError("Schema validation failed for received message: %v", err)
+                continue
+            }
 
-		// The message value is the JSON-marshaled flight data.
-		// Send the message directly to all connected clients.
-		for client := range h.clients {
-			select {
-			case client.send <- m.Value: // Send the raw byte slice received from Kafka
-			default:
-				close(client.send)
-				delete(h.clients, client)
-				flightlog.LogWarn("Client send buffer full, client disconnected.")
-			}
-		}
-	}
+            // Compress the message before sending to clients
+            flightlog.LogDebug("Original message size: %d bytes", len(m.Value))
+            var buf bytes.Buffer
+            gz := gzip.NewWriter(&buf)
+            if _, err := gz.Write(m.Value); err != nil {
+                flightlog.LogError("Failed to compress message: %v", err)
+                continue
+            }
+            if err := gz.Close(); err != nil {
+                flightlog.LogError("Failed to close gzip writer: %v", err)
+                continue
+            }
+            compressedData := buf.Bytes()
+            flightlog.LogDebug("Compressed message size: %d bytes", len(compressedData))
+
+            for client := range h.clients {
+                select {
+                case client.send <- compressedData:
+                default:
+                    close(client.send)
+                    delete(h.clients, client)
+                    flightlog.LogWarn("Client send buffer full, client disconnected.")
+                }
+            }
+        }
+    }
 }
-
 
 // writePump pumps messages from the hub to the websocket connection.
 func (c *Client) writePump() {
-	defer func() {
-		c.conn.Close()
-	}()
-	for {
-		message, ok := <-c.send
-		if !ok {
-			// The hub closed the channel.
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-			return
-		}
+    defer func() {
+        c.conn.Close()
+    }()
+    for {
+        message, ok := <-c.send
+        if !ok {
+            c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+            return
+        }
 
-		w, err := c.conn.NextWriter(websocket.TextMessage)
-		if err != nil {
-			return
-		}
-		w.Write(message)
+        w, err := c.conn.NextWriter(websocket.BinaryMessage)
+        if err != nil {
+            flightlog.LogError("Failed to get WebSocket writer: %v", err)
+            return
+        }
+        
+        if _, err := w.Write(message); err != nil {
+            flightlog.LogError("Failed to write message to WebSocket: %v", err)
+            return
+        }
 
-		if err := w.Close(); err != nil {
-			return
-		}
-	}
+        if err := w.Close(); err != nil {
+            flightlog.LogError("Failed to close WebSocket writer: %v", err)
+            return
+        }
+    }
 }
+
 
 // readPump pumps messages from the websocket connection to the hub.
 // The application reads messages from the websocket connection and dispatches them to the hub.
@@ -211,8 +246,9 @@ func (c *Client) readPump() {
         _, _, err := c.conn.ReadMessage()
         if err != nil {
             if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-                // Log unexpected close errors
-                log.Printf("error: %v", err)
+                flightlog.LogError("WebSocket connection closed unexpectedly: %v", err)
+            } else {
+                flightlog.LogDebug("WebSocket connection closed normally: %v", err)
             }
             break // Exit the loop on error (client disconnected)
         }
@@ -222,14 +258,21 @@ func (c *Client) readPump() {
 
 // HandleConnections handles websocket requests from the peer.
 func HandleConnections(hub *Hub, w http.ResponseWriter, r *http.Request) {
+    token := r.URL.Query().Get("token")
+    expectedToken := os.Getenv("WEBSOCKET_TOKEN")
+    if expectedToken != "" && token != expectedToken {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        flightlog.LogWarn("Unauthorized WebSocket connection attempt")
+        return
+    }
     conn, err := upgrader.Upgrade(w, r, nil)
     if err != nil {
-        log.Printf("WebSocket upgrade failed: %v", err)
+        flightlog.LogError("WebSocket upgrade failed: %v", err)
         return
     }
     client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
     client.hub.register <- client
-
-    go client.writePump() // Start goroutine to send messages to client
-    client.readPump()     // This function runs in the current goroutine
+    flightlog.LogInfo("WebSocket connection established from %s", r.RemoteAddr)
+    go client.writePump()
+    client.readPump()
 }

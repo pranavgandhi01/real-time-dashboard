@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 	flightlog "real-time-dashboard/log"
 	"time"
 )
@@ -27,6 +28,22 @@ type FlightData struct {
 
 // Default OpenSky URL
 const defaultOpenSkyURL = "https://opensky-network.org/api/states/all"
+
+func sanitizeError(err error) string {
+    if err == nil {
+        return ""
+    }
+    // Remove newlines and control characters
+    msg := strings.ReplaceAll(err.Error(), "\n", " ")
+    msg = strings.ReplaceAll(msg, "\r", " ")
+    // Remove other control characters
+    return strings.Map(func(r rune) rune {
+        if r < 32 && r != 9 { // Keep tab but remove other control chars
+            return -1
+        }
+        return r
+    }, msg)
+}
 
 // FetchFlights fetches flight data from the OpenSky Network API with retries,
 // or generates mock data if USE_MOCK_DATA environment variable is "true".
@@ -78,7 +95,7 @@ func FetchFlights() ([]FlightData, error) {
 				time.Sleep(retryDelay)
 				continue
 			}
-			return nil, fmt.Errorf("failed to read opensky response body after %d retries: %w", maxRetries, err)
+			return nil, fmt.Errorf("failed to read opensky response body after %d retries: %v", maxRetries, sanitizeError(err))
 		}
 
 		var response struct {
@@ -92,7 +109,7 @@ func FetchFlights() ([]FlightData, error) {
 				time.Sleep(retryDelay)
 				continue
 			}
-			return nil, fmt.Errorf("failed to decode opensky response after %d retries: %w", maxRetries, err)
+			return nil, fmt.Errorf("failed to decode opensky response after %d retries: %v", maxRetries, sanitizeError(err))
 		}
 
 		var flights []FlightData

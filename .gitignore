@@ -4,6 +4,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .env # Environment variables
+.env.prod
+.env.frontend.prod
+.env*.local
+
+# Certificates
+certs/
+*.pem
+*.crt
+*.key
 
 # Go
 *.exe # Windows executables

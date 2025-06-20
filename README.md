@@ -28,16 +28,23 @@ real-time-dashboard/
 
 Getting Started
 Prerequisites
-Docker installed on your machine.
+- Docker installed on your machine
+- Python 3 (for token generation)
 
 Running Locally
-Clone the repository and create the file structure:
-Make sure you have all the files provided placed in the correct directories as shown in the project structure above.
+1. Clone the repository and create the file structure:
+   Make sure you have all the files provided placed in the correct directories as shown in the project structure above.
 
-Build and run the containers:
-From the root directory (real-time-dashboard/), run the following command:
+2. Generate secure tokens:
+   ```bash
+   ./scripts/generate-token.sh
+   ```
 
-docker-compose up --build
+3. Build and run the containers:
+   From the root directory (real-time-dashboard/), run the following command:
+   ```bash
+   docker-compose up --build
+   ```
 
 This command will build the Docker images for both the backend and frontend services and then start them.
 
