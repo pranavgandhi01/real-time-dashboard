@@ -7,9 +7,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"real-time-dashboard/cache"
 	"real-time-dashboard/fetcher"
+	"real-time-dashboard/health"
 	flightlog "real-time-dashboard/log"
 	"real-time-dashboard/schema"
 	"real-time-dashboard/ws"
@@ -43,6 +47,11 @@ func main() {
     // Initialize Schema Registry
     if err := schema.InitSchemaRegistry(); err != nil {
         flightlog.LogWarn("Schema Registry initialization failed: %v", err)
+    }
+    
+    // Initialize Redis
+    if err := cache.InitRedis(); err != nil {
+        flightlog.LogWarn("Redis initialization failed: %v", err)
     }
 
     hub := ws.NewHub()
@@ -100,8 +109,16 @@ func main() {
         }
     }()
 
-    // Expose Prometheus metrics
+    // Setup HTTP routes
     http.Handle("/metrics", promhttp.Handler())
+    http.HandleFunc("/health", health.HealthHandler)
+    http.HandleFunc("/ready", health.ReadinessHandler)
+    http.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "docs/swagger-ui.html")
+    })
+    http.HandleFunc("/api-docs", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "docs/api-swagger.yaml")
+    })
     http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
         ws.HandleConnections(hub, w, r)
     })
@@ -118,19 +135,47 @@ func main() {
         },
     }
     
+    // Setup graceful shutdown
+    go func() {
+        sigChan := make(chan os.Signal, 1)
+        signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+        <-sigChan
+        
+        flightlog.LogInfo("Shutting down server gracefully...")
+        
+        ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+        defer cancel()
+        
+        if err := server.Shutdown(ctx); err != nil {
+            flightlog.LogError("Server shutdown error: %v", err)
+        }
+        
+        // Close Kafka writer
+        if err := w.Close(); err != nil {
+            flightlog.LogError("Kafka writer close error: %v", err)
+        }
+        
+        // Close Redis
+        if err := cache.Close(); err != nil {
+            flightlog.LogError("Redis close error: %v", err)
+        }
+        
+        flightlog.LogInfo("Server shutdown complete")
+    }()
+    
     certPath := os.Getenv("TLS_CERT_PATH")
     keyPath := os.Getenv("TLS_KEY_PATH")
     
     if certPath != "" && keyPath != "" {
         flightlog.LogInfo("Starting HTTPS server on port %s", port)
         err := server.ListenAndServeTLS(certPath, keyPath)
-        if err != nil {
+        if err != nil && err != http.ErrServerClosed {
             flightlog.LogFatal("Failed to start HTTPS server: %v", err)
         }
     } else {
         flightlog.LogInfo("Starting HTTP server on port %s (TLS disabled)", port)
         err := server.ListenAndServe()
-        if err != nil {
+        if err != nil && err != http.ErrServerClosed {
             flightlog.LogFatal("Failed to start HTTP server: %v", err)
         }
     }

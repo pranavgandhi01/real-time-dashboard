@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-gray-900 text-white;
+/* Leaflet CSS */
+@import 'leaflet/dist/leaflet.css';
+
+/* Custom styles for flight icons */
+.flight-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Slider styling */
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: none;
 }

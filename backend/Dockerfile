@@ -28,8 +28,9 @@ FROM alpine:latest
 
 WORKDIR /root/
 
-# Copy the pre-built binary from the builder stage
+# Copy the pre-built binary and docs from the builder stage
 COPY --from=builder /app/server .
+COPY --from=builder /app/docs ./docs
 
 # Expose port 8080 to the outside world
 EXPOSE 8080

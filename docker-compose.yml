@@ -1,6 +1,16 @@
 # main docker-compose.yml
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - real-time-dashboard_default
+
   backend:
     build:
       context: ./backend
@@ -9,6 +19,8 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    depends_on:
+      - redis
     networks:
       - real-time-dashboard_default
       - kafka-network
@@ -32,3 +44,6 @@ networks:
   kafka-network: # Refer to the external network by the name it was actually created with
     external: true
     name: kafka_kafka-network
+
+volumes:
+  redis_data:

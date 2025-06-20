@@ -14,6 +14,16 @@ Sets up production environment files and generates secure tokens.
 ./scripts/setup-env.sh
 ```
 
+## run-tests.sh
+Runs comprehensive test suite including unit tests and API endpoint verification.
+
+```bash
+./scripts/run-tests.sh
+```
+
+## API Documentation
+Access interactive API documentation at http://localhost:8080/docs after starting the backend.
+
 ## Manual Token Generation
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"

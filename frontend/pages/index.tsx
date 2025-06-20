@@ -1,6 +1,15 @@
 // frontend/pages/index.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import dynamic from "next/dynamic";
 import pako from "pako";
+import FlightStats from "../components/FlightStats";
+import FlightFilters from "../components/FlightFilters";
+
+// Dynamic import to avoid SSR issues with Leaflet
+const FlightMap = dynamic(() => import("../components/FlightMap"), {
+  ssr: false,
+  loading: () => <div className="h-96 bg-gray-800 rounded-lg flex items-center justify-center">Loading map...</div>
+});
 
 // Define the structure of the flight data we expect from the backend
 interface FlightData {
@@ -19,7 +28,29 @@ interface FlightData {
 export default function Home() {
   const [flights, setFlights] = useState<FlightData[]>([]);
   const [status, setStatus] = useState("Connecting...");
-  const [error, setError] = useState<string | null>(null); // New state for error messages
+  const [error, setError] = useState<string | null>(null);
+  
+  // Filter states
+  const [selectedCountry, setSelectedCountry] = useState("");
+  const [statusFilter, setStatusFilter] = useState<'all' | 'air' | 'ground'>('all');
+  const [minSpeed, setMinSpeed] = useState(0);
+  const [viewMode, setViewMode] = useState<'map' | 'grid'>('map');
+  
+  // Memoized filtered flights
+  const filteredFlights = useMemo(() => {
+    return flights.filter(flight => {
+      if (selectedCountry && flight.origin_country !== selectedCountry) return false;
+      if (statusFilter === 'air' && flight.on_ground) return false;
+      if (statusFilter === 'ground' && !flight.on_ground) return false;
+      if (flight.velocity < minSpeed) return false;
+      return true;
+    });
+  }, [flights, selectedCountry, statusFilter, minSpeed]);
+  
+  // Get unique countries for filter
+  const countries = useMemo(() => {
+    return Array.from(new Set(flights.map(f => f.origin_country))).sort();
+  }, [flights]);
 
   useEffect(() => {
     const websocketUrl = `${
@@ -114,23 +145,46 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
-      <header className="flex justify-between items-center mb-6">
-        <h1 className="text-4xl font-extrabold text-teal-400">
-          Live Flight Tracker
-        </h1>
-        <div className="text-lg">
-          Status:{" "}
-          <span
-            className={`font-semibold ${
-              status === "Connected"
-                ? "text-green-500"
-                : status === "Disconnected"
-                ? "text-yellow-500"
-                : "text-red-500"
-            }`}
-          >
-            {status}
-          </span>
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h1 className="text-4xl font-extrabold text-teal-400">
+            Live Flight Tracker
+          </h1>
+          <p className="text-gray-400 mt-1">Real-time flight monitoring dashboard</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('map')}
+              className={`px-3 py-1 rounded text-sm ${
+                viewMode === 'map' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Map View
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-3 py-1 rounded text-sm ${
+                viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Grid View
+            </button>
+          </div>
+          <div className="text-lg">
+            Status:{" "}
+            <span
+              className={`font-semibold ${
+                status === "Connected"
+                  ? "text-green-500"
+                  : status === "Disconnected"
+                  ? "text-yellow-500"
+                  : "text-red-500"
+              }`}
+            >
+              {status}
+            </span>
+          </div>
         </div>
       </header>
 
@@ -139,10 +193,25 @@ export default function Home() {
           Error: {error}
         </div>
       )}
+      
+      <FlightStats flights={filteredFlights} />
+      
+      <FlightFilters
+        countries={countries}
+        selectedCountry={selectedCountry}
+        onCountryChange={setSelectedCountry}
+        statusFilter={statusFilter}
+        onStatusChange={setStatusFilter}
+        minSpeed={minSpeed}
+        onMinSpeedChange={setMinSpeed}
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {flights.length > 0 ? (
-          flights.map((flight) => (
+      {viewMode === 'map' ? (
+        <FlightMap flights={filteredFlights} />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filteredFlights.length > 0 ? (
+            filteredFlights.map((flight) => (
             <div
               key={flight.icao24}
               className="bg-gray-800 rounded-lg p-4 shadow-lg transform hover:scale-105 transition-transform duration-300"
@@ -190,14 +259,17 @@ export default function Home() {
               </div>
             </div>
           ))
-        ) : (
-          <div className="col-span-full text-center text-gray-500 text-xl py-10">
-            {status === "Connected"
-              ? "Waiting for flight data..."
-              : "No flight data available."}
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="col-span-full text-center text-gray-500 text-xl py-10">
+              {status === "Connected"
+                ? filteredFlights.length === 0 && flights.length > 0
+                  ? "No flights match current filters"
+                  : "Waiting for flight data..."
+                : "No flight data available."}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

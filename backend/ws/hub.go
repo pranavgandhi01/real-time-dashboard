@@ -8,6 +8,7 @@ import (
 	// "encoding/json" // REMOVED: No longer directly used for marshal/unmarshal
 	"net/http"
 	"os" // Import os for environment variables
+	"strings"
 	flightlog "real-time-dashboard/log"
 	"real-time-dashboard/schema"
 	"time" // Import time for consumer group rebalance
@@ -27,13 +28,27 @@ const (
 // The Upgrader is used to upgrade an HTTP connection to a WebSocket connection.
 var upgrader = websocket.Upgrader{
     CheckOrigin: func(r *http.Request) bool {
-        allowedOrigin := os.Getenv("ALLOWED_ORIGINS")
-        if allowedOrigin == "" {
-            allowedOrigin = "http://localhost:3000"
-            flightlog.LogWarn("ALLOWED_ORIGINS not set, using default: %s", allowedOrigin)
+        allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+        if allowedOrigins == "" {
+            allowedOrigins = "http://localhost:3000,http://127.0.0.1:3000"
+            flightlog.LogWarn("ALLOWED_ORIGINS not set, using defaults: %s", allowedOrigins)
         }
+        
         origin := r.Header.Get("Origin")
-        return origin == allowedOrigin
+        if origin == "" {
+            // Allow requests without Origin header (like curl)
+            return true
+        }
+        
+        // Check if origin is in allowed list
+        for _, allowed := range strings.Split(allowedOrigins, ",") {
+            if strings.TrimSpace(allowed) == origin {
+                return true
+            }
+        }
+        
+        flightlog.LogWarn("WebSocket connection denied for origin: %s", origin)
+        return false
     },
 }
 

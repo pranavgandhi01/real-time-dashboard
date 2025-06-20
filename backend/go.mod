@@ -8,6 +8,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.48
 	github.com/prometheus/client_golang v1.22.0
 	github.com/riferrei/srclient v0.6.0
+	github.com/redis/go-redis/v9 v9.5.1
 )
 
 require (
