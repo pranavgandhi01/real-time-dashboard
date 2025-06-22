@@ -17,14 +17,14 @@ echo "📦 Stopping application services..."
 cd ../../
 docker-compose down 2>/dev/null || echo "⚠️  No application services running"
 
-# Stop Kafka (if running)
-echo "📨 Checking for Kafka cluster..."
+# Stop shared cluster (if running)
+echo "🏗️  Checking for shared cluster..."
 if command -v kubectl &> /dev/null && kind get clusters 2>/dev/null | grep -q flight-tracker; then
-    echo "📨 Stopping Kafka cluster..."
-    cd devops/kafka/strimzi
-    ./cleanup_strimzi.sh
+    echo "🏗️  Stopping shared cluster..."
+    cd devops/shared-cluster
+    ./cleanup.sh
 else
-    echo "⏭️  No Kafka cluster found"
+    echo "⏭️  No shared cluster found"
 fi
 
 # Stop observability stack

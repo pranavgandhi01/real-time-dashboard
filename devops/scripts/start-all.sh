@@ -46,42 +46,23 @@ check_service "http://localhost:9090" "Prometheus"
 check_service "http://localhost:16686" "Jaeger"
 check_service "http://localhost:9200" "Elasticsearch"
 
-# Start Kafka (optional - requires Kind)
+# Start shared cluster (automatic if Kind/kubectl available)
 echo ""
 if command -v kind &> /dev/null && command -v kubectl &> /dev/null; then
-    read -p "🤔 Start Kafka cluster? (requires Kind/kubectl) [y/N]: " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "📨 Starting Kafka cluster..."
-        cd ../kafka/strimzi
-        ./setup_strimzi.sh
-        KAFKA_STARTED=true
-    else
-        echo "⏭️  Skipping Kafka setup"
-        KAFKA_STARTED=false
-    fi
+    echo "📨 Starting shared cluster with Kafka, Flink, and Pinot..."
+    cd ../shared-cluster
+    ./setup.sh
+    SHARED_CLUSTER_STARTED=true
 else
-    echo "⚠️  Kind/kubectl not found for Kafka setup"
-    read -p "📦 Install Kind and kubectl automatically? [y/N]: " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        cd ../kafka/kind
-        pwd
-        ./install-kind.sh
-        echo ""
-        read -p "📨 Now start Kafka cluster? [y/N]: " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            cd ../strimzi
-            ./setup_strimzi.sh
-            KAFKA_STARTED=true
-        else
-            KAFKA_STARTED=false
-        fi
-    else
-        echo "⏭️  Skipping Kafka setup"
-        KAFKA_STARTED=false
-    fi
+    echo "⚠️  Kind/kubectl not found - installing..."
+    echo "⚠️  Kind/kubectl not found - installing..."
+    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+    chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+    echo ""
+    echo "📨 Starting shared cluster..."
+    cd ../../shared-cluster
+    ./setup.sh
+    SHARED_CLUSTER_STARTED=true
 fi
 
 echo ""
@@ -94,8 +75,9 @@ echo "   Grafana (Dashboards): http://localhost:3000 (admin/admin)"
 echo "   Kibana (Logs):        http://localhost:5601"
 echo "   Elasticsearch (API):  http://localhost:9200"
 echo "   Redis (Cache):        localhost:6379"
-if [[ "$KAFKA_STARTED" == "true" ]]; then
+if [[ "$SHARED_CLUSTER_STARTED" == "true" ]]; then
     echo "   Kafka (Streaming):    localhost:32092"
+    echo "   Shared Cluster:       kubectl get all -n flight-tracker"
 fi
 echo ""
 echo "📊 View running services: docker ps"

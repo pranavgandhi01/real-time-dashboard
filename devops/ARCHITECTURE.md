@@ -16,15 +16,15 @@ The Real-Time Flight Dashboard uses a production-ready DevOps architecture with 
 ┌─────────────────────┴───────────────────────────────────────────┐
 │                    DevOps Infrastructure                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  Observability Stack        │  Infrastructure    │  Messaging    │
+│  Observability Stack        │  Infrastructure    │  Shared K8s   │
 │  ┌─────────────────────┐   │  ┌──────────────┐  │  ┌──────────┐ │
-│  │ Jaeger (16686)      │   │  │ Redis (6379) │  │  │ Kafka    │ │
-│  │ Prometheus (9090)   │   │  └──────────────┘  │  │ (32092)  │ │
-│  │ Grafana (3000)      │   │                    │  └──────────┘ │
-│  │ Elasticsearch (9200)│   │                    │               │
-│  │ Kibana (5601)       │   │                    │               │
-│  │ Filebeat            │   │                    │               │
-│  └─────────────────────┘   │                    │               │
+│  │ Jaeger (16686)      │   │  │ Redis (6379) │  │  │ Strimzi  │ │
+│  │ Prometheus (9090)   │   │  └──────────────┘  │  │ Kafka    │ │
+│  │ Grafana (3000)      │   │                    │  │ (32092)  │ │
+│  │ Elasticsearch (9200)│   │                    │  │ Flink    │ │
+│  │ Kibana (5601)       │   │                    │  │ Pinot    │ │
+│  │ Filebeat            │   │                    │  │ (Helm)   │ │
+│  └─────────────────────┘   │                    │  └──────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -40,11 +40,12 @@ The Real-Time Flight Dashboard uses a production-ready DevOps architecture with 
 
 ### 2. Infrastructure Services
 - **Caching**: Redis for session management and data caching
-- **Message Queuing**: Kafka for event streaming and async communication
+- **Message Queuing**: Strimzi Kafka operator for event streaming
 
 ### 3. Deployment Platforms
 - **Container Orchestration**: Docker Compose for local development
-- **Kubernetes**: Kind cluster for Kafka (production-like setup)
+- **Kubernetes**: Shared Kind cluster with namespace isolation
+- **Helm Charts**: Strimzi operator, Flink, Pinot for production-like setup
 
 ## Data Flow
 

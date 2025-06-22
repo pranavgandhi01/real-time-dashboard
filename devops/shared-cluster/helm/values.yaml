@@ -1,0 +1,96 @@
+# Global configuration
+global:
+  namespace: flight-tracker
+  storageClass: standard
+  
+# Strimzi Kafka configuration (minimal for dev)
+kafka:
+  enabled: true
+  cluster:
+    name: kafka
+    replicas: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+    storage:
+      type: ephemeral
+    listeners:
+      external:
+        type: nodeport
+        port: 32092
+  zookeeper:
+    replicas: 1
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 125m
+      limits:
+        memory: 512Mi
+        cpu: 250m
+    storage:
+      type: ephemeral
+
+# Flink configuration (minimal)
+flink:
+  enabled: true
+  jobmanager:
+    replicas: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+  taskmanager:
+    replicas: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+
+# Pinot configuration (minimal)
+pinot:
+  enabled: true
+  controller:
+    replicaCount: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+  broker:
+    replicaCount: 1
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 125m
+      limits:
+        memory: 512Mi
+        cpu: 250m
+  server:
+    replicaCount: 1
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+
+# Monitoring
+monitoring:
+  enabled: true
+  prometheus:
+    enabled: true
+  grafana:
+    enabled: true

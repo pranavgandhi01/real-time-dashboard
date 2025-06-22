@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
-	"../log"
+	"github.com/real-time-dashboard/backend/pkg/log"
 )
 
 type HealthStatus struct {

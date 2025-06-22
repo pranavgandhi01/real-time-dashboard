@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-	"../types"
+	"github.com/real-time-dashboard/backend/pkg/types"
 )
 
 type FlightFetcher struct {

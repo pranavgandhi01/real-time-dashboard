@@ -14,16 +14,16 @@ else
     echo ""
 fi
 
-# Check Kafka
-echo "📨 Kafka Cluster:"
-echo "-----------------"
+# Check Shared Cluster
+echo "🏗️  Shared Cluster:"
+echo "------------------"
 if command -v kubectl &> /dev/null; then
     if kubectl config current-context 2>/dev/null | grep -q "kind-flight-tracker"; then
-        if kubectl get kafka -n kafka 2>/dev/null | grep -q flight-tracker-kafka; then
-            echo "✅ Kafka cluster found:"
-            kubectl get kafka,kafkatopic -n kafka 2>/dev/null || echo "❌ Kafka not accessible"
+        if kubectl get namespace flight-tracker 2>/dev/null; then
+            echo "✅ Shared cluster namespace found"
+            kubectl get pods -n flight-tracker 2>/dev/null || echo "❌ No pods running"
         else
-            echo "❌ No Kafka cluster found"
+            echo "❌ No shared cluster found"
         fi
     else
         echo "❌ Not connected to kind-flight-tracker context"
@@ -67,8 +67,8 @@ else
 fi
 
 # Kafka external access check
-if kubectl get svc -n kafka 2>/dev/null | grep -q "flight-tracker-kafka-kafka-external-bootstrap"; then
-    echo "✅ Kafka - localhost:32092 (external access available)"
+if kubectl get svc -n flight-tracker 2>/dev/null | grep -q "kafka"; then
+    echo "✅ Kafka - localhost:32092 (shared cluster)"
 else
     echo "⚠️  Kafka - localhost:32092 (checking...)"
 fi

@@ -18,13 +18,14 @@ devops/
 ├── observability/
 │   ├── docker-compose.yml           # Monitoring & logging stack
 │   ├── prometheus.yml               # Prometheus configuration
-│   ├── filebeat.yml                 # Log collection config
 │   └── grafana/                     # Dashboard configurations
 ├── infrastructure/
 │   └── docker-compose.yml           # Core infrastructure services
-├── kafka/                           # Kafka setup with Strimzi
-│   ├── strimzi/                     # Kubernetes Kafka cluster
-│   └── kind/                        # Local Kubernetes setup
+├── shared-cluster/                  # Memory-efficient shared setup
+│   ├── helm/                        # Helm charts and values
+│   ├── k8s/                         # Kubernetes manifests
+│   ├── setup.sh                     # Automated deployment
+│   └── cleanup.sh                   # Cleanup script
 ├── scripts/                         # Management scripts
 └── docs/                            # Documentation files
 ```
@@ -43,10 +44,10 @@ cd devops/infrastructure
 docker-compose up -d
 ```
 
-### Start Kafka (Kubernetes)
+### Start Shared Cluster (Kubernetes)
 ```bash
-cd devops/kafka
-./setup_strimzi.sh setup
+cd devops/shared-cluster
+./setup.sh
 ```
 
 ### Start Everything
@@ -80,10 +81,11 @@ cd devops
 ### Infrastructure Services
 - **Redis** (6379) - High-performance caching and session storage
 
-### Event Streaming (Kubernetes)
-- **Kafka** (9094/32092) - Distributed event streaming with Strimzi operator
-- **Zookeeper** - Kafka cluster coordination
-- **Strimzi Operator** - Kubernetes-native Kafka management
+### Shared Kubernetes Cluster
+- **Strimzi Kafka** (32092) - Production-ready Kafka with operator
+- **Flink** (30081) - Stream processing with Kubernetes operator
+- **Pinot** (30900) - Real-time analytics with Helm charts
+- **Namespace Isolation** - Resource quotas and limits
 
 ## 🔗 Access Points
 
@@ -126,16 +128,19 @@ docker-compose restart [service-name]
 docker-compose up -d --scale [service-name]=3
 ```
 
-### Kafka Management
+### Shared Cluster Management
 ```bash
-# Check Kafka cluster
-kubectl get kafka,kafkatopic -n kafka
+# Check all resources
+kubectl get all -n flight-tracker
 
-# View Kafka logs
-kubectl logs -f deployment/strimzi-cluster-operator -n kafka
+# Check Kafka cluster
+kubectl get kafka,kafkatopic -n flight-tracker
+
+# View Strimzi operator logs
+kubectl logs -f deployment/strimzi-cluster-operator -n flight-tracker
 
 # Port forward for direct access
-kubectl port-forward svc/flight-tracker-kafka-kafka-bootstrap 9092:9092 -n kafka
+kubectl port-forward svc/kafka-kafka-bootstrap 9092:9092 -n flight-tracker
 ```
 
 ## 🔧 Prerequisites

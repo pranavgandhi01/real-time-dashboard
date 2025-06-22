@@ -28,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Complete observability stack with Jaeger, Prometheus, Grafana
 - Centralized logging with ELK stack (Elasticsearch, Kibana, Filebeat)
-- Production-ready Kafka cluster with Strimzi operator
+- Memory-efficient shared cluster with Strimzi Kafka operator
+- Helm-based deployment with namespace isolation
+- Resource quotas and limits for local development
 - Redis infrastructure service for caching
 - Automated deployment and management scripts
 - Docker Compose orchestration for local development

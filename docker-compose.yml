@@ -5,17 +5,20 @@ services:
       context: .
       dockerfile: ./backend/services/flight-data-service/Dockerfile
     ports:
-      - "8081:8081"
+      - "8084:8081"
+    env_file:
+      - ./backend/.env
     environment:
       - PORT=8081
-      - FETCH_INTERVAL=15s
-      - MAX_CONNECTIONS=1000
-      - REDIS_HOST=localhost:6379
-      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:32092
-      - KAFKA_TOPIC=flight-events
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
       - SERVICE_NAME=flight-data-service
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
     depends_on: []
     networks:
       - flight-tracker
@@ -41,14 +44,19 @@ services:
       dockerfile: ./backend/services/websocket-service/Dockerfile
     ports:
       - "8082:8082"
+    env_file:
+      - ./backend/.env
     environment:
       - PORT=8082
-      - MAX_CONNECTIONS=1000
-      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:32092
-      - KAFKA_TOPIC=flight-events
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
       - SERVICE_NAME=websocket-service
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
     networks:
       - flight-tracker
     healthcheck:
@@ -73,15 +81,21 @@ services:
       dockerfile: ./backend/services/api-gateway/Dockerfile
     ports:
       - "8080:8080"
+    env_file:
+      - ./backend/.env
     environment:
       - PORT=8080
-      - RATE_LIMIT_PER_IP=5
       - FLIGHT_DATA_SERVICE_URL=http://flight-data-service:8081
       - WEBSOCKET_SERVICE_URL=http://websocket-service:8082
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
       - SERVICE_NAME=api-gateway
-      - JAEGER_ENDPOINT=http://localhost:14268/api/traces
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
     depends_on:
       flight-data-service:
         condition: service_healthy
@@ -111,15 +125,19 @@ services:
       dockerfile: ./backend/services/mock-data-service/Dockerfile
     ports:
       - "8083:8083"
+    env_file:
+      - ./backend/.env
     environment:
       - PORT=8083
-      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:32092
-      - KAFKA_TOPIC=flight-events
-      - FETCH_INTERVAL=5s
-      - MOCK_FLIGHTS_COUNT=100
-      - LOG_LEVEL=info
-    networks:
-      - flight-tracker
+      - SERVICE_NAME=mock-data-service
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
     healthcheck:
       test:
         [
@@ -134,6 +152,7 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    network_mode: host
     profiles:
       - testing
 
@@ -154,6 +173,14 @@ services:
     networks:
       - flight-tracker
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
     volumes:
       - ./frontend:/app
       - /app/node_modules

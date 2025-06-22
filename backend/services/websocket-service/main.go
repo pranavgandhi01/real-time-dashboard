@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"net/http"
-	"os"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"../../../pkg/config"
-	"../../../pkg/health"
-	"../../../pkg/log"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/real-time-dashboard/backend/pkg/config"
+	"github.com/real-time-dashboard/backend/pkg/health"
+	"github.com/real-time-dashboard/backend/pkg/log"
+	"github.com/real-time-dashboard/backend/pkg/middleware"
+	"github.com/real-time-dashboard/backend/pkg/observability"
 )
 
 var upgrader = websocket.Upgrader{
@@ -54,11 +57,28 @@ func (ws *WSService) GetMetrics(c *gin.Context) {
 func main() {
 	cfg := config.Load()
 	wsService := NewWSService()
+	
+	// Initialize tracing
+	tp, err := observability.InitTracing("websocket-service", "http://jaeger:14268/api/traces")
+	if err != nil {
+		log.LogError("Failed to initialize tracing: %v", err)
+	}
+	defer func() {
+		if tp != nil {
+			tp.Shutdown(context.Background())
+		}
+	}()
+	
 	r := gin.Default()
 	
+	// Apply middleware
+	r.Use(middleware.TracingMiddleware("websocket-service"))
+	r.Use(middleware.MetricsMiddleware())
+	
 	r.GET("/health", gin.WrapF(health.HealthHandler))
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/ws", wsService.HandleWebSocket)
-	r.GET("/metrics", wsService.GetMetrics)
+	r.GET("/ws-metrics", wsService.GetMetrics)
 
 	log.LogInfo("WebSocket Service starting on port %s", cfg.Port)
 	log.LogFatal("Server failed: %v", http.ListenAndServe(":"+cfg.Port, r))

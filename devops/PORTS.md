@@ -11,6 +11,11 @@
 | Elasticsearch | 9200 | Log Storage API |
 | Kibana | 5601 | Log Analysis UI |
 | Kafka | 9094 | Event Streaming (K8s NodePort: 32092) |
+| Kafka Exporter | 9308 | Kafka Metrics (K8s NodePort: 30308) |
+| Flink UI | 8081 | Stream Processing UI (K8s NodePort: 30081) |
+| Flink Metrics | 9249 | Flink Metrics (K8s NodePort: 30249) |
+| Pinot Controller | 9000 | Real-time Analytics (K8s NodePort: 30900) |
+| Pinot Broker | 8099 | Query Interface (K8s NodePort: 30099) |
 
 ## Application Ports
 

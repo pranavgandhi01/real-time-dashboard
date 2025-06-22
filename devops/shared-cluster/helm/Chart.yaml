@@ -1,0 +1,19 @@
+apiVersion: v2
+name: flight-tracker
+description: Real-time Flight Dashboard - Shared Cluster
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: strimzi-kafka-operator
+    version: 0.38.0
+    repository: https://strimzi.io/charts/
+    condition: kafka.enabled
+  - name: flink
+    version: 0.1.0
+    repository: https://downloads.apache.org/flink/flink-kubernetes-operator-1.7.0/
+    condition: flink.enabled
+  - name: pinot
+    version: 0.1.0
+    repository: https://raw.githubusercontent.com/apache/pinot/master/helm
+    condition: pinot.enabled

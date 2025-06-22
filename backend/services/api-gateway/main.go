@@ -5,13 +5,15 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"time"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"../../../pkg/config"
-	"../../../pkg/middleware"
-	"../../../pkg/health"
-	"../../../pkg/log"
+	"github.com/real-time-dashboard/backend/pkg/config"
+	"github.com/real-time-dashboard/backend/pkg/middleware"
+	"github.com/real-time-dashboard/backend/pkg/health"
+	"github.com/real-time-dashboard/backend/pkg/log"
+	"github.com/real-time-dashboard/backend/pkg/observability"
 )
 
 type APIGateway struct {
@@ -21,11 +23,21 @@ type APIGateway struct {
 }
 
 func NewAPIGateway(cfg *config.Config) *APIGateway {
+	flightDataURL := getEnv("FLIGHT_DATA_SERVICE_URL", "http://flight-data-service:8081")
+	websocketURL := getEnv("WEBSOCKET_SERVICE_URL", "http://websocket-service:8082")
+	
 	return &APIGateway{
-		flightDataURL: "http://flight-data-service:8081",
-		websocketURL:  "http://websocket-service:8082",
+		flightDataURL: flightDataURL,
+		websocketURL:  websocketURL,
 		rateLimiter:   middleware.NewRateLimiter(cfg.RateLimitPerIP, time.Minute),
 	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 func (gw *APIGateway) proxyToFlightData(c *gin.Context) {

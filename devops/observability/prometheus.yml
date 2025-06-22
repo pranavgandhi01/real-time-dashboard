@@ -4,15 +4,27 @@ global:
 scrape_configs:
   - job_name: 'api-gateway'
     static_configs:
-      - targets: ['api-gateway:8080']
+      - targets: ['host.docker.internal:8080']
     metrics_path: '/metrics'
     
   - job_name: 'flight-data-service'
     static_configs:
-      - targets: ['flight-data-service:8081']
+      - targets: ['host.docker.internal:8081']
     metrics_path: '/metrics'
     
   - job_name: 'websocket-service'
     static_configs:
-      - targets: ['websocket-service:8082']
+      - targets: ['host.docker.internal:8082']
     metrics_path: '/metrics'
+
+  - job_name: 'flink-cluster'
+    static_configs:
+      - targets: ['host.docker.internal:30249']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'kafka-jmx'
+    static_configs:
+      - targets: ['host.docker.internal:9308']
+    metrics_path: '/metrics'
+    scrape_interval: 30s

@@ -19,7 +19,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:           getEnv("PORT", "8080"),
-		RedisURL:       getEnv("REDIS_URL", "redis:6379"),
+		RedisURL:       getEnv("REDIS_URL", "localhost:6379"),
 		KafkaBroker:    getEnv("KAFKA_BROKER", "localhost:32092"),
 		KafkaTopic:     getEnv("KAFKA_TOPIC", "flight-events"),
 		FetchInterval:  getDuration("FETCH_INTERVAL", "15s"),

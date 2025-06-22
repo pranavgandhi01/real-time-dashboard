@@ -1,12 +1,11 @@
 package observability
 
 import (
-	"context"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	v1170 "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
 func InitTracing(serviceName, jaegerEndpoint string) (*trace.TracerProvider, error) {
@@ -18,8 +17,8 @@ func InitTracing(serviceName, jaegerEndpoint string) (*trace.TracerProvider, err
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exp),
 		trace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(serviceName),
+			v1170.SchemaURL,
+			v1170.ServiceName(serviceName),
 		)),
 	)
 

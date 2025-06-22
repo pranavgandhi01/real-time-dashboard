@@ -3,7 +3,7 @@ package schema
 import (
 	"encoding/json"
 	"os"
-	"../log"
+	"github.com/real-time-dashboard/backend/pkg/log"
 
 	"github.com/riferrei/srclient"
 )

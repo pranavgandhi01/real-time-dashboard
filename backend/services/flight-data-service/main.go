@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
 	"github.com/gin-gonic/gin"
-	"flight-data-service/pkg/config"
-	"flight-data-service/pkg/types"
-	"flight-data-service/pkg/client"
-	"flight-data-service/pkg/health"
-	"flight-data-service/pkg/log"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/real-time-dashboard/backend/pkg/config"
+	"github.com/real-time-dashboard/backend/pkg/types"
+	"github.com/real-time-dashboard/backend/pkg/client"
+	"github.com/real-time-dashboard/backend/pkg/health"
+	"github.com/real-time-dashboard/backend/pkg/log"
+	"github.com/real-time-dashboard/backend/pkg/middleware"
+	"github.com/real-time-dashboard/backend/pkg/observability"
 )
 
 type FlightService struct {
@@ -89,10 +93,26 @@ func (fs *FlightService) startFetching() {
 func main() {
 	cfg := config.Load()
 	flightService := NewFlightService(cfg)
+	
+	// Initialize tracing
+	tp, err := observability.InitTracing("flight-data-service", "http://jaeger:14268/api/traces")
+	if err != nil {
+		log.LogError("Failed to initialize tracing: %v", err)
+	}
+	defer func() {
+		if tp != nil {
+			tp.Shutdown(context.Background())
+		}
+	}()
+	
 	r := gin.Default()
 	
+	// Apply middleware
+	r.Use(middleware.TracingMiddleware("flight-data-service"))
+	r.Use(middleware.MetricsMiddleware())
+	
 	r.GET("/health", gin.WrapF(health.HealthHandler))
-
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/flights", flightService.GetAllFlights)
 	r.GET("/stats", flightService.GetStats)
 

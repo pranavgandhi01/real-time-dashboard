@@ -5,8 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-	"../observability"
+	"github.com/real-time-dashboard/backend/pkg/observability"
 )
 
 func TracingMiddleware(serviceName string) gin.HandlerFunc {
