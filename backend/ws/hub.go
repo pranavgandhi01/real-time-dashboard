@@ -231,7 +231,10 @@ func (h *Hub) readKafkaMessages() {
             compressedData := buf.Bytes()
             flightlog.LogDebug("Compressed message size: %d bytes", len(compressedData))
 
+            // Track message queue size
+            queueSize := 0
             for client := range h.clients {
+                queueSize += len(client.send)
                 select {
                 case client.send <- compressedData:
                 default:
@@ -240,6 +243,9 @@ func (h *Hub) readKafkaMessages() {
                     flightlog.LogWarn("Client send buffer full, client disconnected.")
                 }
             }
+            
+            // Update metrics (would need to import prometheus in hub.go)
+            flightlog.LogDebug("Message queue size: %d, Active clients: %d", queueSize, len(h.clients))
         }
     }
 }

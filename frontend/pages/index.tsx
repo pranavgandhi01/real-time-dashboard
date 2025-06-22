@@ -58,8 +58,8 @@ export default function Home() {
     }?token=${process.env.NEXT_PUBLIC_WEBSOCKET_TOKEN || ""}`;
     let socket: WebSocket;
     let reconnectAttempts = 0;
-    const maxReconnectAttempts = 5;
-    const baseReconnectDelay = 3000;
+    const maxReconnectAttempts = 10;
+    const baseReconnectDelay = 1000;
     
     console.log('[WebSocket] Connecting to:', websocketUrl);
 
@@ -111,7 +111,11 @@ export default function Home() {
         setStatus("Disconnected");
         
         if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
-          const delay = baseReconnectDelay + (reconnectAttempts * 1000);
+          // Exponential backoff with jitter
+          const exponentialDelay = Math.min(baseReconnectDelay * Math.pow(2, reconnectAttempts), 30000);
+          const jitter = Math.random() * 1000;
+          const delay = exponentialDelay + jitter;
+          
           setError(`Reconnecting in ${Math.round(delay/1000)}s... (${reconnectAttempts + 1}/${maxReconnectAttempts})`);
           
           setTimeout(() => {

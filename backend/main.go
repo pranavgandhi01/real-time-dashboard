@@ -16,6 +16,7 @@ import (
 	"real-time-dashboard/fetcher"
 	"real-time-dashboard/health"
 	flightlog "real-time-dashboard/log"
+	"real-time-dashboard/ratelimit"
 	"real-time-dashboard/schema"
 	"real-time-dashboard/ws"
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,10 +34,39 @@ var (
         Help: "Latency of fetching flight data",
         Buckets: prometheus.DefBuckets,
     })
+    flightDataProcessingTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+        Name: "flight_data_processing_seconds",
+        Help: "Time taken to process flight data",
+        Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
+    })
+    websocketMessageQueueSize = prometheus.NewGauge(prometheus.GaugeOpts{
+        Name: "websocket_message_queue_size",
+        Help: "Current size of WebSocket message queue",
+    })
+    kafkaConsumerLag = prometheus.NewGauge(prometheus.GaugeOpts{
+        Name: "kafka_consumer_lag",
+        Help: "Kafka consumer lag in messages",
+    })
+    redisCacheHits = prometheus.NewCounter(prometheus.CounterOpts{
+        Name: "redis_cache_hits_total",
+        Help: "Total number of Redis cache hits",
+    })
+    redisCacheMisses = prometheus.NewCounter(prometheus.CounterOpts{
+        Name: "redis_cache_misses_total",
+        Help: "Total number of Redis cache misses",
+    })
 )
 
 func init() {
-    prometheus.MustRegister(connectedClients, fetchLatency)
+    prometheus.MustRegister(
+        connectedClients, 
+        fetchLatency, 
+        flightDataProcessingTime,
+        websocketMessageQueueSize,
+        kafkaConsumerLag,
+        redisCacheHits,
+        redisCacheMisses,
+    )
 }
 
 const (
@@ -59,6 +89,9 @@ func main() {
         flightlog.LogWarn("Redis initialization failed: %v", err)
     }
 
+    // Initialize rate limiter (5 connections per IP per minute)
+    rateLimiter := ratelimit.NewRateLimiter(5, time.Minute)
+    
     hub := ws.NewHub(cfg)
     go hub.Run()
 
@@ -75,13 +108,15 @@ func main() {
     go func() {
         for t := range ticker.C {
             flightlog.LogDebug("Fetching flight data at %v", t)
-            start := time.Now()
+            fetchStart := time.Now()
             flights, err := fetcher.FetchFlights()
-            fetchLatency.Observe(time.Since(start).Seconds())
+            fetchLatency.Observe(time.Since(fetchStart).Seconds())
             if err != nil {
                 flightlog.LogError("Error fetching flight data: %v", err)
                 continue
             }
+            
+            processStart := time.Now()
             message, err := json.Marshal(flights)
             if err != nil {
                 flightlog.LogError("Error marshalling flight data for Kafka: %v", err)
@@ -93,6 +128,8 @@ func main() {
                 flightlog.LogError("Schema validation failed: %v", err)
                 continue
             }
+            
+            flightDataProcessingTime.Observe(time.Since(processStart).Seconds())
             if w != nil {
                 err = w.WriteMessages(context.Background(), kafka.Message{Value: message})
                 if err != nil {
@@ -117,6 +154,11 @@ func main() {
         http.ServeFile(w, r, "docs/api-swagger.yaml")
     })
     http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+        if !rateLimiter.Allow(r.RemoteAddr) {
+            http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+            flightlog.LogWarn("Rate limit exceeded for %s", r.RemoteAddr)
+            return
+        }
         ws.HandleConnections(hub, w, r)
     })
 
