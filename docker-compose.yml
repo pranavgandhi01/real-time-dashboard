@@ -1,59 +1,87 @@
-version: '3.8'
-
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    networks:
-      - flight-tracker
-
+  # Flight Data Service - REST API for flight data
   flight-data-service:
     build:
       context: .
-      dockerfile: ./services/flight-data-service/Dockerfile
+      dockerfile: ./backend/services/flight-data-service/Dockerfile
     ports:
       - "8081:8081"
     environment:
       - PORT=8081
       - FETCH_INTERVAL=15s
       - MAX_CONNECTIONS=1000
-    depends_on:
-      - redis
+      - REDIS_HOST=localhost:6379
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:32092
+      - KAFKA_TOPIC=flight-events
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - SERVICE_NAME=flight-data-service
+    depends_on: []
     networks:
       - flight-tracker
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8081/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
+  # WebSocket Service - Real-time broadcasting
   websocket-service:
     build:
       context: .
-      dockerfile: ./services/websocket-service/Dockerfile
+      dockerfile: ./backend/services/websocket-service/Dockerfile
     ports:
       - "8082:8082"
     environment:
       - PORT=8082
       - MAX_CONNECTIONS=1000
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:32092
+      - KAFKA_TOPIC=flight-events
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - SERVICE_NAME=websocket-service
     networks:
       - flight-tracker
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8082/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
+  # API Gateway - Request routing and rate limiting
   api-gateway:
     build:
       context: .
-      dockerfile: ./services/api-gateway/Dockerfile
+      dockerfile: ./backend/services/api-gateway/Dockerfile
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
       - RATE_LIMIT_PER_IP=5
+      - FLIGHT_DATA_SERVICE_URL=http://flight-data-service:8081
+      - WEBSOCKET_SERVICE_URL=http://websocket-service:8082
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - SERVICE_NAME=api-gateway
+      - JAEGER_ENDPOINT=http://localhost:14268/api/traces
     depends_on:
       flight-data-service:
         condition: service_healthy
@@ -62,27 +90,54 @@ services:
     networks:
       - flight-tracker
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
+  # Mock Data Service - For testing without external API
   mock-data-service:
     build:
       context: .
-      dockerfile: ./services/mock-data-service/Dockerfile
+      dockerfile: ./backend/services/mock-data-service/Dockerfile
     ports:
       - "8083:8083"
     environment:
       - PORT=8083
-      - KAFKA_BROKER=kafka:9092
-      - KAFKA_TOPIC=flights
-      - FETCH_INTERVAL=15s
-    depends_on:
-      - kafka
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:32092
+      - KAFKA_TOPIC=flight-events
+      - FETCH_INTERVAL=5s
+      - MOCK_FLIGHTS_COUNT=100
+      - LOG_LEVEL=info
     networks:
       - flight-tracker
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8083/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - testing
 
+  # Frontend - Next.js React application
   frontend:
     build:
       context: ./frontend
@@ -91,12 +146,25 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8080
-      - NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8082/ws
+      - NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8080/ws
+      - NODE_ENV=development
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_healthy
     networks:
       - flight-tracker
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
 
 networks:
   flight-tracker:
     driver: bridge
+    name: flight-tracker-network
+
+# Volumes for development
+volumes:
+  node_modules:
+    driver: local

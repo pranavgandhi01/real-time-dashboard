@@ -1,0 +1,24 @@
+services:
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - infrastructure
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - redis-data:/data
+
+networks:
+  infrastructure:
+    driver: bridge
+    name: infrastructure-network
+
+volumes:
+  redis-data:
+    driver: local

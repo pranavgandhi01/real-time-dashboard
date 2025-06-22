@@ -1,0 +1,11 @@
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 9094
+        hostPort: 9094
+      - containerPort: 8081
+        hostPort: 8081
+      - containerPort: 9090
+        hostPort: 9091 # Changed from 9090 to 9091

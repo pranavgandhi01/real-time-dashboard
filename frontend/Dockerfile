@@ -4,16 +4,16 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # Copy package.json and package-lock.json (or yarn.lock) to install dependencies
-COPY frontend/package*.json ./
+COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
 # Copy the rest of the application code
-COPY frontend/ .
+COPY . .
 
 # Copy environment files for build-time variables
-COPY .env.frontend ./.env.local
+COPY .env.local ./.env.local
 
 # Remove Next.js build cache to ensure a clean rebuild
 RUN rm -rf .next

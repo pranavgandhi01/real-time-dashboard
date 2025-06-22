@@ -1,0 +1,17 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: flights
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: flight-tracker-kafka
+spec:
+  partitions: 6
+  replicas: 1
+  config:
+    cleanup.policy: delete
+    retention.ms: 3600000
+    segment.ms: 300000
+    compression.type: snappy
+    min.insync.replicas: 1
+    message.timestamp.type: CreateTime
