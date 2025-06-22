@@ -11,6 +11,8 @@ import (
 	flightlog "real-time-dashboard/log"
 	"real-time-dashboard/schema"
 	"real-time-dashboard/config"
+	"real-time-dashboard/memory"
+	"real-time-dashboard/scaling"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -83,6 +85,12 @@ type Hub struct {
 
 	// Connection pool metrics
 	activeConnections int
+
+	// Memory management
+	memoryWindow *memory.SlidingWindow
+
+	// Auto-scaling
+	autoScaler *scaling.AutoScaler
 }
 
 // NewHub creates a new Hub instance.
@@ -97,6 +105,18 @@ func NewHub(cfg *config.Config) *Hub {
 		kafkaReader: r,
 		config: cfg,
 		activeConnections: 0,
+		memoryWindow: memory.NewSlidingWindow(
+			cfg.Memory.WindowMinutes,
+			cfg.Memory.MaxSize,
+			cfg.Memory.CleanupInterval,
+		),
+		autoScaler: scaling.NewAutoScaler(
+			cfg.WebSocket.MaxConnections,
+			cfg.Scaling.ScaleUpThreshold,
+			cfg.Scaling.ScaleDownThreshold,
+			cfg.Scaling.CooldownMinutes,
+			cfg.Scaling.MonitorInterval,
+		),
 	}
 }
 
@@ -164,6 +184,7 @@ func (h *Hub) Run() {
 			}
 			h.clients[client] = true
 			h.activeConnections++
+			h.autoScaler.UpdateConnections(h.activeConnections)
 			flightlog.LogDebug("Client registered. Active: %d/%d", h.activeConnections, h.config.WebSocket.MaxConnections)
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
@@ -216,6 +237,9 @@ func (h *Hub) readKafkaMessages() {
                 continue
             }
 
+            // Store in sliding window for memory management
+            h.memoryWindow.Add(m.Value)
+
             // Compress the message before sending to clients
             flightlog.LogDebug("Original message size: %d bytes", len(m.Value))
             var buf bytes.Buffer
@@ -240,11 +264,15 @@ func (h *Hub) readKafkaMessages() {
                 default:
                     close(client.send)
                     delete(h.clients, client)
+                    h.activeConnections--
                     flightlog.LogWarn("Client send buffer full, client disconnected.")
                 }
             }
             
-            // Update metrics (would need to import prometheus in hub.go)
+            // Update auto-scaler metrics
+            h.autoScaler.UpdateQueueDepth(queueSize)
+            h.autoScaler.UpdateConnections(h.activeConnections)
+            
             flightlog.LogDebug("Message queue size: %d, Active clients: %d", queueSize, len(h.clients))
         }
     }

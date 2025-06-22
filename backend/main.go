@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 	"real-time-dashboard/health"
 	flightlog "real-time-dashboard/log"
 	"real-time-dashboard/ratelimit"
+	"real-time-dashboard/scaling"
 	"real-time-dashboard/schema"
 	"real-time-dashboard/ws"
 	"github.com/prometheus/client_golang/prometheus"
@@ -89,8 +91,15 @@ func main() {
         flightlog.LogWarn("Redis initialization failed: %v", err)
     }
 
-    // Initialize rate limiter (5 connections per IP per minute)
-    rateLimiter := ratelimit.NewRateLimiter(5, time.Minute)
+    // Initialize rate limiter from config
+    rateLimiter := ratelimit.NewRateLimiter(
+        cfg.Scaling.RateLimitPerIP, 
+        time.Duration(cfg.Scaling.RateLimitWindow)*time.Minute,
+    )
+    
+    // Initialize scalable consumer for horizontal scaling
+    scalableConsumer := scaling.NewScalableConsumer(cfg)
+    defer scalableConsumer.Close()
     
     hub := ws.NewHub(cfg)
     go hub.Run()
@@ -147,6 +156,12 @@ func main() {
     http.Handle("/metrics", promhttp.Handler())
     http.HandleFunc("/health", health.HealthHandler)
     http.HandleFunc("/ready", health.ReadinessHandler)
+    http.HandleFunc("/scale-health", func(w http.ResponseWriter, r *http.Request) {
+        // This would be called by orchestration systems for scaling decisions
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status":"healthy","connections":` + fmt.Sprintf("%d", hub.activeConnections) + `}`))
+    })
     http.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
         http.ServeFile(w, r, "docs/swagger-ui.html")
     })

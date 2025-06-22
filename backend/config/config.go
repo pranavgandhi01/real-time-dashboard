@@ -10,6 +10,8 @@ type Config struct {
 	Kafka     KafkaConfig
 	Redis     RedisConfig
 	Performance PerformanceConfig
+	Scaling   ScalingConfig
+	Memory    MemoryConfig
 }
 
 type WebSocketConfig struct {
@@ -43,6 +45,21 @@ type PerformanceConfig struct {
 	MessageBatchSize  int
 }
 
+type ScalingConfig struct {
+	ScaleUpThreshold   float64
+	ScaleDownThreshold float64
+	CooldownMinutes    int
+	MonitorInterval    int
+	RateLimitPerIP     int
+	RateLimitWindow    int
+}
+
+type MemoryConfig struct {
+	WindowMinutes int
+	MaxSize       int
+	CleanupInterval int
+}
+
 func Load() *Config {
 	return &Config{
 		WebSocket: WebSocketConfig{
@@ -71,6 +88,19 @@ func Load() *Config {
 			MaxDisplayFlights: getEnvInt("MAX_DISPLAY_FLIGHTS", 100),
 			ClusterDistance:   getEnvFloat("CLUSTER_DISTANCE", 0.1),
 			MessageBatchSize:  getEnvInt("MESSAGE_BATCH_SIZE", 50),
+		},
+		Scaling: ScalingConfig{
+			ScaleUpThreshold:   getEnvFloat("SCALE_UP_THRESHOLD", 0.8),
+			ScaleDownThreshold: getEnvFloat("SCALE_DOWN_THRESHOLD", 0.3),
+			CooldownMinutes:    getEnvInt("SCALING_COOLDOWN_MINUTES", 5),
+			MonitorInterval:    getEnvInt("SCALING_MONITOR_INTERVAL", 30),
+			RateLimitPerIP:     getEnvInt("RATE_LIMIT_PER_IP", 5),
+			RateLimitWindow:    getEnvInt("RATE_LIMIT_WINDOW_MINUTES", 1),
+		},
+		Memory: MemoryConfig{
+			WindowMinutes:   getEnvInt("MEMORY_WINDOW_MINUTES", 5),
+			MaxSize:        getEnvInt("MEMORY_MAX_SIZE", 1000),
+			CleanupInterval: getEnvInt("MEMORY_CLEANUP_INTERVAL", 1),
 		},
 	}
 }
