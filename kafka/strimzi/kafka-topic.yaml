@@ -1,0 +1,13 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: flights
+  labels:
+    strimzi.io/cluster: flight-cluster
+spec:
+  partitions: 6
+  replicas: 1
+  config:
+    cleanup.policy: delete
+    retention.ms: 600000 # 10 minutes retention
+    message.timestamp.type: LogAppendTime

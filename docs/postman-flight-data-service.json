@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "Flight Data Service API",
+    "description": "Test Flight Data Service REST endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get All Flights",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/flights",
+          "host": ["{{baseUrl}}"],
+          "path": ["flights"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Specific Flight",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/flights/abc123",
+          "host": ["{{baseUrl}}"],
+          "path": ["flights", "abc123"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Flight Statistics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/stats",
+          "host": ["{{baseUrl}}"],
+          "path": ["stats"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

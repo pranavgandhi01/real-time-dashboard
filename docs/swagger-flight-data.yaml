@@ -1,0 +1,132 @@
+openapi: 3.0.0
+info:
+  title: Flight Data Service API
+  description: REST API for current flight data and statistics
+  version: 1.0.0
+  contact:
+    name: Real-Time Dashboard Team
+servers:
+  - url: http://localhost:8081
+    description: Development server
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns service health status
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: flight-data
+  /flights:
+    get:
+      summary: Get all flights
+      description: Returns current state of all tracked flights
+      responses:
+        '200':
+          description: List of current flights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Flight'
+  /flights/{icao24}:
+    get:
+      summary: Get specific flight
+      description: Returns data for a specific aircraft
+      parameters:
+        - name: icao24
+          in: path
+          required: true
+          schema:
+            type: string
+          example: abc123
+      responses:
+        '200':
+          description: Flight data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Flight'
+        '404':
+          description: Flight not found
+  /stats:
+    get:
+      summary: Get flight statistics
+      description: Returns summary statistics of tracked flights
+      responses:
+        '200':
+          description: Flight statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlightStats'
+components:
+  schemas:
+    Flight:
+      type: object
+      properties:
+        icao24:
+          type: string
+          description: Unique aircraft identifier
+          example: abc123
+        callsign:
+          type: string
+          description: Flight callsign
+          example: UAL123
+        origin_country:
+          type: string
+          description: Country of origin
+          example: United States
+        longitude:
+          type: number
+          format: float
+          description: Longitude coordinate
+          example: -122.4194
+        latitude:
+          type: number
+          format: float
+          description: Latitude coordinate
+          example: 37.7749
+        on_ground:
+          type: boolean
+          description: Whether aircraft is on ground
+          example: false
+        velocity:
+          type: number
+          format: float
+          description: Speed in m/s
+          example: 250.5
+        last_updated:
+          type: string
+          format: date-time
+          description: Last update timestamp
+    FlightStats:
+      type: object
+      properties:
+        total_flights:
+          type: integer
+          description: Total number of tracked flights
+          example: 1500
+        in_air:
+          type: integer
+          description: Number of flights in air
+          example: 1200
+        on_ground:
+          type: integer
+          description: Number of flights on ground
+          example: 300
+        last_updated:
+          type: string
+          format: date-time
+          description: Last update timestamp

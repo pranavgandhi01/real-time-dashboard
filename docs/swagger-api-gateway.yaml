@@ -1,0 +1,143 @@
+openapi: 3.0.0
+info:
+  title: API Gateway
+  description: Central API gateway with rate limiting and service routing
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Development server
+paths:
+  /health:
+    get:
+      summary: Gateway health check
+      description: Returns API gateway health status
+      responses:
+        '200':
+          description: Gateway is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: api-gateway
+  /flights:
+    get:
+      summary: Get all flights (proxied)
+      description: Proxies request to Flight Data Service
+      responses:
+        '200':
+          description: List of current flights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Flight'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: rate limit exceeded
+  /flights/{icao24}:
+    get:
+      summary: Get specific flight (proxied)
+      description: Proxies request to Flight Data Service
+      parameters:
+        - name: icao24
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Flight data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Flight'
+        '404':
+          description: Flight not found
+        '429':
+          description: Rate limit exceeded
+  /stats:
+    get:
+      summary: Get flight statistics (proxied)
+      description: Proxies request to Flight Data Service
+      responses:
+        '200':
+          description: Flight statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlightStats'
+        '429':
+          description: Rate limit exceeded
+  /ws:
+    get:
+      summary: WebSocket connection (proxied)
+      description: Proxies WebSocket connection to WebSocket Service
+      parameters:
+        - name: Connection
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [Upgrade]
+        - name: Upgrade
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [websocket]
+      responses:
+        '101':
+          description: WebSocket connection established
+        '429':
+          description: Rate limit exceeded
+components:
+  schemas:
+    Flight:
+      type: object
+      properties:
+        icao24:
+          type: string
+        callsign:
+          type: string
+        origin_country:
+          type: string
+        longitude:
+          type: number
+          format: float
+        latitude:
+          type: number
+          format: float
+        on_ground:
+          type: boolean
+        velocity:
+          type: number
+          format: float
+        last_updated:
+          type: string
+          format: date-time
+    FlightStats:
+      type: object
+      properties:
+        total_flights:
+          type: integer
+        in_air:
+          type: integer
+        on_ground:
+          type: integer
+        last_updated:
+          type: string
+          format: date-time

@@ -1,0 +1,100 @@
+{
+  "info": {
+    "name": "API Gateway",
+    "description": "Test API Gateway with rate limiting and service routing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Gateway Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get All Flights (via Gateway)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/flights",
+          "host": ["{{baseUrl}}"],
+          "path": ["flights"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Flight Statistics (via Gateway)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/stats",
+          "host": ["{{baseUrl}}"],
+          "path": ["stats"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Rate Limit Test",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/flights",
+          "host": ["{{baseUrl}}"],
+          "path": ["flights"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Test rate limiting by making multiple requests",
+              "for (let i = 0; i < 6; i++) {",
+              "    pm.sendRequest({",
+              "        url: pm.variables.get('baseUrl') + '/flights',",
+              "        method: 'GET'",
+              "    }, function (err, res) {",
+              "        if (i >= 5) {",
+              "            pm.test('Rate limit should trigger', function () {",
+              "                pm.expect(res.code).to.equal(429);",
+              "            });",
+              "        }",
+              "    });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}

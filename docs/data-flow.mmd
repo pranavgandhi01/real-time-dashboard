@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant F as Frontend
+    participant G as API Gateway
+    participant FDS as Flight Data Service
+    participant WS as WebSocket Service
+    participant MDS as Mock Data Service
+    participant K as Kafka
+    participant API as OpenSky API
+    
+    Note over MDS: Periodic Data Fetching
+    loop Every 15 seconds
+        MDS->>API: GET /states/all
+        API-->>MDS: Flight data JSON
+        MDS->>MDS: Transform to Avro
+        MDS->>K: Publish flight updates
+    end
+    
+    Note over F,G: REST API Requests
+    F->>G: GET /flights
+    G->>FDS: Proxy request
+    FDS-->>G: Current flight data
+    G-->>F: JSON response
+    
+    Note over F,WS: Direct WebSocket Connection
+    F->>WS: WebSocket connection ws://localhost:8082/ws
+    WS-->>F: Connection established
+    
+    Note over K,WS: Real-time Updates
+    K->>WS: Flight data from Kafka
+    WS->>F: Broadcast to all clients

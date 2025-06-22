@@ -1,0 +1,110 @@
+openapi: 3.0.0
+info:
+  title: WebSocket Service API
+  description: WebSocket service for real-time flight updates
+  version: 1.0.0
+servers:
+  - url: http://localhost:8082
+    description: Development server
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns WebSocket service health status
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: websocket
+  /metrics:
+    get:
+      summary: Connection metrics
+      description: Returns current WebSocket connection metrics
+      responses:
+        '200':
+          description: Connection metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: integer
+                    description: Number of active WebSocket connections
+                    example: 150
+  /ws:
+    get:
+      summary: WebSocket connection
+      description: Establish WebSocket connection for real-time flight updates
+      parameters:
+        - name: Connection
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [Upgrade]
+        - name: Upgrade
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [websocket]
+      responses:
+        '101':
+          description: WebSocket connection established
+        '400':
+          description: Bad request - invalid WebSocket headers
+        '429':
+          description: Too many connections
+components:
+  schemas:
+    FlightUpdate:
+      type: object
+      description: Real-time flight update message
+      properties:
+        type:
+          type: string
+          enum: [flight_update]
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Flight'
+    Flight:
+      type: object
+      properties:
+        icao24:
+          type: string
+          example: abc123
+        callsign:
+          type: string
+          example: UAL123
+        origin_country:
+          type: string
+          example: United States
+        longitude:
+          type: number
+          format: float
+          example: -122.4194
+        latitude:
+          type: number
+          format: float
+          example: 37.7749
+        on_ground:
+          type: boolean
+          example: false
+        velocity:
+          type: number
+          format: float
+          example: 250.5
+        last_updated:
+          type: string
+          format: date-time

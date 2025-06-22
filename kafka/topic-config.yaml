@@ -1,0 +1,16 @@
+# Strimzi Kafka Topic Configuration for Kubernetes
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: flights
+  labels:
+    strimzi.io/cluster: flight-tracker-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: 3600000  # 1 hour retention
+    segment.ms: 300000     # 5 minute segments
+    cleanup.policy: delete
+    compression.type: snappy
+    min.insync.replicas: 2

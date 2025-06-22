@@ -1,0 +1,61 @@
+{
+  "info": {
+    "name": "WebSocket Service API",
+    "description": "Test WebSocket Service health and metrics endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8082",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Connection Metrics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/metrics",
+          "host": ["{{baseUrl}}"],
+          "path": ["metrics"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Note: WebSocket connections cannot be tested directly in Postman",
+          "// Use a WebSocket client or browser console for WebSocket testing:",
+          "// const ws = new WebSocket('ws://localhost:8082/ws');",
+          "// ws.onmessage = (event) => console.log(JSON.parse(event.data));"
+        ]
+      }
+    }
+  ]
+}

@@ -1,5 +1,0 @@
-[OpenSky API] --- (HTTP/S Fetch) ---> [Go Backend (Fetcher + WebSocket Hub)] --- (WebSocket) ---> [Next.js Frontend]
-                                           ^                                           |
-                                           |                                           v
-                                           +-------------------------------------------+
-                                               (In-Memory Broadcast to Clients)

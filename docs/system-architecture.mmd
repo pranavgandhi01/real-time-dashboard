@@ -1,0 +1,19 @@
+flowchart TB
+    Frontend[Next.js Frontend Port 3000]
+    Gateway[API Gateway Port 8080]
+    FlightData[Flight Data Service Port 8081]
+    WebSocket[WebSocket Service Port 8082]
+    MockData[Mock Data Service Port 8083]
+    Kafka[Kafka Broker Port 9092]
+    SchemaRegistry[Schema Registry Port 8081]
+    OpenSky[OpenSky Network API]
+    
+    Frontend --> Gateway
+    Frontend -.-> WebSocket
+    Gateway --> FlightData
+    MockData --> OpenSky
+    MockData --> Kafka
+    Kafka --> WebSocket
+    WebSocket --> Frontend
+    SchemaRegistry --> Kafka
+    FlightData --> Kafka
