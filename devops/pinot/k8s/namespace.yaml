@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: pinot
-  labels:
-    name: pinot
-    app.kubernetes.io/name: pinot
-    app.kubernetes.io/component: real-time-analytics
